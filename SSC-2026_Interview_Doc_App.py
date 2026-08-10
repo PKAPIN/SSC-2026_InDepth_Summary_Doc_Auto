@@ -34,7 +34,7 @@ GOOGLE_SHEET_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?fo
 # 실행 버튼
 if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작", type="primary", use_container_width=True):
     
-    # 지정된 저장소 내 HWPX 템플릿 탐색 (새로운 템플릿 업로드 기능 삭제)
+    # 지정된 저장소 내 HWPX 템플릿 탐색 (고정 서식 사용)
     hwpx_files = glob.glob("*.hwpx")
     if not hwpx_files:
         st.error("❌ 저장소 내에서 지정된 .hwpx 템플릿 파일을 찾을 수 없습니다. GitHub 저장소에 .hwpx 파일을 올려주세요.")
@@ -68,14 +68,13 @@ if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작
             
     total_merge_cnt = len(merge_fields)  # 14개
 
-    # 회의진행일시 순 정렬
+    # 회의진행일시 순 정렬 (시간순 정렬)
     data_df['일시_dt'] = pd.to_datetime(data_df['일시'], errors='coerce')
     sorted_df = data_df.sort_values(by=['일시_dt', '시작시간', '학교명'], na_position='last').reset_index(drop=True)
 
     version_str = f"v.{datetime.datetime.now().strftime('%y%m%d_%H%M')}"
     folder_name = f"결과물_심층면담_회의록_{version_str}"
 
-    # 개별 HWPX 바이너리 보관용 딕셔너리
     doc_bytes_dict = {}
     log_records = []
     
@@ -140,6 +139,7 @@ if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작
         status = "정상" if missing_cnt == 0 else "일부항목누락"
         
         row_dict = {
+            "선택": False,  # 표 내부 체크박스 열
             "생성번호": idx,
             "문서ID": doc_id,
             "학교명": school,
@@ -162,13 +162,14 @@ if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작
 
     log_df = pd.DataFrame(log_records)
     
-    # 2. 엑셀 로그 생성 (빨간 글씨 서식 적용)
+    # 2. 엑셀 로그 생성 ('선택' 열을 제외하고 파일 작성)
+    excel_log_df = log_df.drop(columns=["선택"])
     excel_buffer = io.BytesIO()
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "생성로그"
     
-    headers = list(log_df.columns)
+    headers = list(excel_log_df.columns)
     ws.append(headers)
     
     header_fill = PatternFill(start_color="1F4E78", end_color="1F4E78", fill_type="solid")
@@ -189,10 +190,11 @@ if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작
         cell.font = header_font
         cell.alignment = Alignment(horizontal="center", vertical="center")
         
-    for r_idx, row_data in enumerate(log_records, start=2):
+    for r_idx, row_data in excel_log_df.iterrows():
+        excel_r = r_idx + 2
         for c_idx, col_name in enumerate(headers, start=1):
             val = row_data[col_name]
-            cell = ws.cell(row=r_idx, column=c_idx, value=val)
+            cell = ws.cell(row=excel_r, column=c_idx, value=val)
             cell.border = thin_border
             
             if col_name in ["생성번호", "회의일시", "회차", "생성상태", "누락현황(누락/전체)"]:
@@ -207,7 +209,7 @@ if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작
                 
     wb.save(excel_buffer)
     excel_bytes = excel_buffer.getvalue()
-    csv_bytes = log_df.to_csv(index=False, encoding='utf-8-sig').encode('utf-8-sig')
+    csv_bytes = excel_log_df.to_csv(index=False, encoding='utf-8-sig').encode('utf-8-sig')
 
     # 3. 전체 ZIP 패키징 생성
     zip_buffer = io.BytesIO()
@@ -221,7 +223,7 @@ if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작
         main_zip.writestr(f"{folder_name}/{excel_filename}", excel_bytes)
         main_zip.writestr(f"{folder_name}/{csv_filename}", csv_bytes)
 
-    # st.session_state에 저장하여 다운로드 시 화면 자동 리셋(로그 사라짐) 방지!
+    # st.session_state에 데이터 저장 (다운로드 시 화면 리셋 방지)
     st.session_state['generated_data'] = {
         'folder_name': folder_name,
         'version_str': version_str,
@@ -233,19 +235,20 @@ if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작
         'doc_ids': list(doc_bytes_dict.keys())
     }
 
-# 생성 결과 화면 출력 (st.session_state 이용으로 다운로드 시에도 사라지지 않고 영구 유지)
+# 결과 화면 및 체크박스 로그 표 출력
 if 'generated_data' in st.session_state:
     data = st.session_state['generated_data']
-    st.success(f"🎉 구글 시트 연결 성공! 총 **{len(data['doc_ids'])}건**의 회의록 및 점검 로그 생성이 완료되었습니다.")
+    st.success(f"🎉 구글 시트 연결 성공! 총 **{len(data['doc_ids'])}건**의 회의록 및 점검 로그가 시간순으로 생성되었습니다.")
 
-    st.subheader("📥 다운로드 옵션 선택")
+    st.subheader("📋 생성로그 미리보기 {시간순} & 선택 문서 다운로드")
+    st.markdown("아래 표의 맨 앞 **`선택` 체크박스**를 클릭하여 다운로드할 회의록 문서를 지정을 수 있습니다.")
+
+    # 상단 다운로드 및 선택 컨트롤 버튼
+    col_btn1, col_btn2, col_btn3, col_btn4 = st.columns([1.5, 1, 1, 1.5])
     
-    download_tab1, download_tab2 = st.tabs(["📦 전체 일괄 다운로드 (ZIP)", "📄 개별/선택 문서 다운로드"])
-    
-    with download_tab1:
-        st.markdown(f"**전체 {len(data['doc_ids'])}개 HWPX 회의록 문서 + 엑셀/CSV 로그**가 하나의 압축파일에 포함되어 있습니다.")
+    with col_btn1:
         st.download_button(
-            label=f"📦 전체 일괄 다운로드 ({data['folder_name']}.zip)",
+            label=f"📦 전체 일괄 다운로드 ({len(data['doc_ids'])}건 ZIP)",
             data=data['all_zip_bytes'],
             file_name=f"{data['folder_name']}.zip",
             mime="application/zip",
@@ -253,47 +256,61 @@ if 'generated_data' in st.session_state:
             key="btn_download_all"
         )
         
-    with download_tab2:
-        st.markdown("다운로드받고자 하는 문서를 직접 선택하세요 (단일 파일 또는 선택 패키지 ZIP 다운로드).")
-        
-        selected_docs = st.multiselect(
-            "다운로드할 회의록 문서를 선택하세요:",
-            options=data['doc_ids'],
-            default=data['doc_ids'][:1] if data['doc_ids'] else []
-        )
-        
-        if len(selected_docs) == 1:
-            # 단일 선택 시 바로 HWPX 다운로드
-            target_id = selected_docs[0]
+    with col_btn2:
+        if st.button("☑️ 전체 선택", use_container_width=True):
+            data['log_df']['선택'] = True
+            
+    with col_btn3:
+        if st.button("⬜ 전체 해제", use_container_width=True):
+            data['log_df']['선택'] = False
+
+    # 체크박스 편집이 가능한 로그 표 출력
+    edited_df = st.data_editor(
+        data['log_df'],
+        column_config={
+            "선택": st.column_config.CheckboxColumn(
+                "선택",
+                help="다운로드할 문서 항목을 체크하세요",
+                default=False
+            )
+        },
+        disabled=[col for col in data['log_df'].columns if col != "선택"],
+        hide_index=True,
+        use_container_width=True,
+        key="log_data_editor"
+    )
+
+    # 선택된 항목 추출
+    selected_rows = edited_df[edited_df["선택"] == True]
+    selected_doc_ids = selected_rows["문서ID"].tolist()
+
+    with col_btn4:
+        if len(selected_doc_ids) == 0:
+            st.button("📄 선택 문서 다운로드 (0건)", disabled=True, use_container_width=True)
+        elif len(selected_doc_ids) == 1:
+            target_id = selected_doc_ids[0]
             st.download_button(
-                label=f"📄 [{target_id}.hwpx] 선택 문서 다운로드",
+                label=f"📄 선택 문서 다운로드 (1건 .hwpx)",
                 data=data['doc_bytes_dict'][target_id],
                 file_name=f"{target_id}.hwpx",
                 mime="application/hwp+zip",
                 use_container_width=True,
-                key="btn_download_single"
+                key="btn_download_single_sel"
             )
-        elif len(selected_docs) > 1:
-            # 여러 개 선택 시 선택 항목 모음 ZIP 다운로드
+        else:
             sub_zip_buffer = io.BytesIO()
             with zipfile.ZipFile(sub_zip_buffer, 'w', compression=zipfile.ZIP_DEFLATED) as sub_zip:
-                for target_id in selected_docs:
+                for target_id in selected_doc_ids:
                     if target_id in data['doc_bytes_dict']:
                         sub_zip.writestr(f"{data['folder_name']}_선택문서/{target_id}.hwpx", data['doc_bytes_dict'][target_id])
             
             st.download_button(
-                label=f"📦 선택한 문서 {len(selected_docs)}개 모음 다운로드 (.zip)",
+                label=f"📦 선택 문서 다운로드 ({len(selected_doc_ids)}건 ZIP)",
                 data=sub_zip_buffer.getvalue(),
-                file_name=f"{data['folder_name']}_선택문서_{len(selected_docs)}건.zip",
+                file_name=f"{data['folder_name']}_선택문서_{len(selected_doc_ids)}건.zip",
                 mime="application/zip",
                 use_container_width=True,
-                key="btn_download_multi"
+                key="btn_download_multi_sel"
             )
-        else:
-            st.warning("⚠️ 다운로드할 문서를 1개 이상 선택해 주세요.")
 
-    st.divider()
-    
-    # 생성 로그 미리보기 표 (화면 리셋 없이 계속 유지됨)
-    st.subheader("📋 생성 로그 및 점검 현황 미리보기")
-    st.dataframe(data['log_df'], use_container_width=True)
+    st.caption(f"💡 현재 **{len(selected_doc_ids)}개**의 문서가 선택되었습니다.")
