@@ -96,11 +96,16 @@ if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작
             else: val_str = str(val).strip()
                 
             val_str = val_str.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            # ↵ 셀 내부 줄바꿈(\n)을 HWPX 줄바꿈 태그로 변환
+            val_str = val_str.replace("\n", "</hp:t><hp:lineBreak/><hp:t>")
             xml_content = xml_content.replace(f"{{{{{col}}}}}", val_str)
             
-        # 🧹 [수정] 쉼표/공백을 건드리지 않고 메일머지 표시 태그만 정교하게 제거
+        # 🧹 메일머지 표시 태그 완전 제거
         xml_content = re.sub(r'<hp:ctrl><hp:fieldBegin.*?</hp:ctrl>', '', xml_content, flags=re.DOTALL)
         xml_content = re.sub(r'<hp:ctrl><hp:fieldEnd.*?</hp:ctrl>', '', xml_content, flags=re.DOTALL)
+
+        # ↵ [핵심] HWPX 양식 내 무시되던 줄바꿈 태그(<hp:lineBreak/>) 위치 올바르게 복원
+        xml_content = re.sub(r'<hp:t>\s*<hp:lineBreak/>\s*</hp:t>', '<hp:lineBreak/>', xml_content)
 
         # 🧹 미입력 항목 발생 시 겹치는 불필요한 쉼표 정돈
         xml_content = re.sub(r'(<hp:t>\s*</hp:t>\s*<hp:t>\s*,\s*</hp:t>)+', '', xml_content)
