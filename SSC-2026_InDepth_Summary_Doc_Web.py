@@ -98,14 +98,12 @@ if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작
             val_str = val_str.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
             xml_content = xml_content.replace(f"{{{{{col}}}}}", val_str)
             
-        # 🧹 [핵심] HWPX 메일머지 필드 제어 태그 완전 제거 (일반 순수 텍스트화)
-        xml_content = re.sub(r'<hp:ctrl><hp:fieldBegin.*?</hp:fieldBegin></hp:ctrl>', '', xml_content, flags=re.DOTALL)
-        xml_content = re.sub(r'<hp:ctrl><hp:fieldEnd.*?/></hp:ctrl>', '', xml_content, flags=re.DOTALL)
-        xml_content = re.sub(r'<hp:ctrl><hp:fieldEnd.*?</hp:fieldEnd></hp:ctrl>', '', xml_content, flags=re.DOTALL)
+        # 🧹 [수정] 쉼표/공백을 건드리지 않고 메일머지 표시 태그만 정교하게 제거
+        xml_content = re.sub(r'<hp:ctrl><hp:fieldBegin.*?</hp:ctrl>', '', xml_content, flags=re.DOTALL)
+        xml_content = re.sub(r'<hp:ctrl><hp:fieldEnd.*?</hp:ctrl>', '', xml_content, flags=re.DOTALL)
 
-        # 🧹 연속되거나 끝에 남은 쉼표(,) 정돈
-        xml_content = re.sub(r'(,\s*){2,}', ', ', xml_content)
-        xml_content = re.sub(r',\s*</hp:t>', '</hp:t>', xml_content)
+        # 🧹 미입력 항목 발생 시 겹치는 불필요한 쉼표 정돈
+        xml_content = re.sub(r'(<hp:t>\s*</hp:t>\s*<hp:t>\s*,\s*</hp:t>)+', '', xml_content)
 
         doc_buffer = io.BytesIO()
         with zipfile.ZipFile(doc_buffer, 'w') as z_out:
