@@ -1,2 +1,9 @@
-# SSC-2026_InDepth_Summary_Doc_Auto
-심층면담 회의록 자동화
+# 📄 SSC-2026 심층면담 회의록 자동 생성 시스템
+
+---
+
+## 🌐 웹 (Web) 호스팅
+* **호스팅 주소:** https://ssc-2026-interview-doc.streamlit.app/
+* **업로드 주소 (GitHub):** https://github.com/사용자계정/SSC-2026_InDepth_Summary_Doc_Auto
+
+---
