@@ -31,12 +31,12 @@ GOOGLE_SHEET_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?fo
 
 if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작", type="primary", use_container_width=True):
     
-    hwpx_files = glob.glob("*.hwpx")
+    hwpx_files = [f for f in glob.glob("*.hwpx") if not os.path.basename(f).startswith("~$")]
     if not hwpx_files:
         st.error("❌ 저장소 내에서 지정된 .hwpx 템플릿 파일을 찾을 수 없습니다. GitHub 저장소에 .hwpx 파일을 올려주세요.")
         st.stop()
         
-    template_path = hwpx_files[0]
+    template_path = max(hwpx_files, key=os.path.getmtime)
     with open(template_path, "rb") as f:
         hwpx_bytes = f.read()
 
@@ -59,7 +59,7 @@ if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작
     for cmd in commands:
         if cmd not in merge_fields:
             merge_fields.append(cmd)
-    total_merge_cnt = len(merge_fields)  # 14개 고정
+    total_merge_cnt = len(merge_fields)
 
     data_df['일시_dt'] = pd.to_datetime(data_df['일시'], errors='coerce')
     sorted_df = data_df.sort_values(by=['일시_dt', '시작시간', '학교명'], na_position='last').reset_index(drop=True)
@@ -98,7 +98,15 @@ if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작
             val_str = val_str.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
             xml_content = xml_content.replace(f"{{{{{col}}}}}", val_str)
             
-        # HWPX 원본 ZipInfo 보존 재압축
+        # 🧹 [핵심] HWPX 메일머지 필드 제어 태그 완전 제거 (일반 순수 텍스트화)
+        xml_content = re.sub(r'<hp:ctrl><hp:fieldBegin.*?</hp:fieldBegin></hp:ctrl>', '', xml_content, flags=re.DOTALL)
+        xml_content = re.sub(r'<hp:ctrl><hp:fieldEnd.*?/></hp:ctrl>', '', xml_content, flags=re.DOTALL)
+        xml_content = re.sub(r'<hp:ctrl><hp:fieldEnd.*?</hp:fieldEnd></hp:ctrl>', '', xml_content, flags=re.DOTALL)
+
+        # 🧹 연속되거나 끝에 남은 쉼표(,) 정돈
+        xml_content = re.sub(r'(,\s*){2,}', ', ', xml_content)
+        xml_content = re.sub(r',\s*</hp:t>', '</hp:t>', xml_content)
+
         doc_buffer = io.BytesIO()
         with zipfile.ZipFile(doc_buffer, 'w') as z_out:
             for info in template_infolist:
@@ -170,7 +178,6 @@ if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작
         main_zip.writestr(f"{folder_name}/심층면담_서류_Log_{version_str}.xlsx", excel_bytes)
         main_zip.writestr(f"{folder_name}/심층면담_서류_Log_{version_str}.csv", csv_bytes)
 
-    # st.session_state 저장 (이벤트 발생 시 화면 새로고침 방지)
     st.session_state['generated_data'] = {
         'folder_name': folder_name, 'version_str': version_str,
         'doc_bytes_dict': doc_bytes_dict, 'all_zip_bytes': zip_buffer.getvalue(),
