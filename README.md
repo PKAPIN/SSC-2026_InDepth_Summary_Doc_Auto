@@ -1,5 +1,7 @@
 # 📄 SSC-2026 심층면담 회의록 자동 생성 시스템
 
+데이터베이스(스프레드시트) : https://docs.google.com/spreadsheets/d/1ws9JTAdRXwbp--NhrjWwelNorSTv1_LIJW7DijUtJLU/edit?gid=770556375#gid=770556375
+
 ---
 
 ## 🌐 웹 (Web) 호스팅
