@@ -1,5 +1,7 @@
 # 📄 SSC-2026 심층면담 회의록 자동 생성 시스템
 
+## 데이터베이스_DB
+
 "SSC_AUTO_DB"(데이터베이스_스프레드시트) : https://docs.google.com/spreadsheets/d/1ws9JTAdRXwbp--NhrjWwelNorSTv1_LIJW7DijUtJLU/edit?gid=770556375#gid=770556375
 
 "[SEIC_찾학컨26] 컨설팅 관리 (에듀니티랩)" (원본 스프레드시트): https://docs.google.com/spreadsheets/d/1akSWgNug-YLy4JH4l0rDbiZSZz6Ycy7fqt7gQR3VOOs/edit?gid=1632303462#gid=1632303462
@@ -15,3 +17,5 @@
 
 
 정확한 데이터를 입력한 후 프로그램을 구동하시길 바랍니다.
+
+**현재 사용자 계정 ;  PKAPIN
