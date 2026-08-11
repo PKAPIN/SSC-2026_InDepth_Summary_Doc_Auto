@@ -5,8 +5,7 @@
 ---
 
 ## 🌐 웹 (Web) 호스팅
-* **호스팅 주소:** [https://ssc-2026-interview-doc.streamlit.app]
-(https://ssc-2026interviewdoc-nlip4dhyzptfwqybmvtaph.streamlit.app)
-* **업로드 주소 (GitHub):** https://github.com/PKAPIN/SSC-2026_InDepth_Summary_Doc_Auto
+* **호스팅 주소: (https://ssc-2026interviewdoc-nlip4dhyzptfwqybmvtaph.streamlit.app)
+* **업로드 주소 (GitHub): (https://github.com/PKAPIN/SSC-2026_InDepth_Summary_Doc_Auto)
 
 ---
