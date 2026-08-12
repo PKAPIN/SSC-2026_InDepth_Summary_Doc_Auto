@@ -98,10 +98,9 @@ if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작
             # XML 특수문자 안전 이스케이프
             val_str = val_str.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
             
-            # 💡 [핵심 - 줄바꿈 처리 & 파일 손상 방지]
-            # 구글 시트의 \n 줄바꿈을 HWPX 표준 lineBreak 태그로 정밀 교체하여 파일 손상 없이 줄바꿈 적용
-            val_str = val_str.replace("\n\n", "</hp:t><hp:lineBreak/><hp:lineBreak/><hp:t>")
-            val_str = val_str.replace("\n", "</hp:t><hp:lineBreak/><hp:t>")
+            # 💡 [핵심 해결] 시트의 \n 줄바꿈을 HWPX 표준 문단 교체(엔터) 태그로 치환하여 한글 문서에서 엔터가 확실히 적용되게 합니다.
+            val_str = val_str.replace("\n\n", "</hp:t></hp:p><hp:p><hp:subList/><hp:run><hp:t>")
+            val_str = val_str.replace("\n", "</hp:t></hp:p><hp:p><hp:subList/><hp:run><hp:t>")
             
             xml_content = xml_content.replace(f"{{{{{col}}}}}", val_str)
             
