@@ -98,21 +98,25 @@ if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작
             # XML 특수문자 안전 이스케이프
             val_str = val_str.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
             
-            # 💡 [핵심 해결 - 파일 손상 100% 방지 표준 줄바꿈 태그]
-            # 문단 태그(<hp:p>)를 깨트리지 않고 HWPX 표준 강제 줄바꿈(<hp:lineBreak/>)으로 안전하게 대체합니다.
-            val_str = val_str.replace("\n\n", "</hp:t><hp:lineBreak/><hp:lineBreak/><hp:t>")
-            val_str = val_str.replace("\n", "</hp:t><hp:lineBreak/><hp:t>")
+            # 💡 [핵심 - XML 파일 손상 없는 HWPX 표준 줄바꿈 정밀 복합 치환]
+            # 연속 줄바꿈(\n\n)과 단일 줄바꿈(\n)을 순차적으로 안정적인 문단 분리 구조로 안전 변환
+            val_str = val_str.replace("\r\n", "\n")
+            
+            # HWPX XML 문법에 안전한 줄바꿈 조합 처리
+            val_str = val_str.replace("\n\n", "</hp:t></hp:run></hp:p><hp:p><hp:run><hp:t>")
+            val_str = val_str.replace("\n", "</hp:t></hp:run></hp:p><hp:p><hp:run><hp:t>")
             
             xml_content = xml_content.replace(f"{{{{{col}}}}}", val_str)
             
-        # 🧹 메일머지 및 필드 시작/끝 태그 완전 제거
+        # 🧹 메일머지 및 필드 시작/끝 태그 완전 제거 (자동화 흔적 클린업)
         xml_content = re.sub(r'<hp:ctrl><hp:fieldBegin.*?</hp:ctrl>', '', xml_content, flags=re.DOTALL)
-        xml_content = re.sub(r'<hp:ctrl><hp:fieldEnd.*?</hp:ctrl>', '', xml_content, flags=re.DOTALL)
+        xml_content = re.sub(r'<hp:ctrl><hp:fieldEnd.*.*?/hp:ctrl>', '', xml_content, flags=re.DOTALL)
 
-        # ↵ HWPX 옛날 줄바꿈 계산 캐시(linesegarray)를 삭제하여 한글 프로그램이 실시간으로 레이아웃을 재계산하도록 조치
+        # ↵ HWPX 옛날 줄바꿈 계산 캐시(linesegarray)를 삭제하여 한글이 실시간으로 줄바꿈을 재계산하도록 조치
         xml_content = re.sub(r'<hp:linesegarray>.*?</hp:linesegarray>', '<hp:linesegarray/>', xml_content, flags=re.DOTALL)
 
-        # 🧹 빈 태그 및 불필요한 쉼표 정돈
+        # 🧹 치환 과정에서 생성될 수 있는 빈 문단 태그 및 쉼표 정돈
+        xml_content = re.sub(r'<hp:run><hp:t>\s*</hp:t></hp:run>', '', xml_content)
         xml_content = re.sub(r'(<hp:t>\s*</hp:t>\s*<hp:t>\s*,\s*</hp:t>)+', '', xml_content)
 
         doc_buffer = io.BytesIO()
