@@ -1,6 +1,6 @@
 # =========================================================================
 # [웹 호스팅용] 심층면담 회의록 및 점검 로그 자동 생성 Streamlit 웹 앱
-# - 본문 영역 폰트 크기 9pt 강제 적용 테스트판 (height="900")
+# - HWPX section0.xml 내부 paraPr 개별 줄간격(120%) 강제 개편판
 # =========================================================================
 import io
 import os
@@ -105,16 +105,20 @@ if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작
             
             xml_content = xml_content.replace(f"{{{{{col}}}}}", val_str)
             
-        # 🧹 메일머지 표시 태그 및 레이아웃 캐시 정돈
+        # 🧹 메일머지 표시 태그 및 레이아웃 캐시 정돈 (linesegarray 제거로 재계산 유도)
         xml_content = re.sub(r'<hp:ctrl><hp:fieldBegin.*?</hp:ctrl>', '', xml_content, flags=re.DOTALL)
         xml_content = re.sub(r'<hp:ctrl><hp:fieldEnd.*?</hp:ctrl>', '', xml_content, flags=re.DOTALL)
         xml_content = re.sub(r'<hp:linesegarray>.*?</hp:linesegarray>', '<hp:linesegarray/>', xml_content, flags=re.DOTALL)
         xml_content = re.sub(r'(<hp:t>\s*</hp:t>\s*<hp:t>\s*,\s*</hp:t>)+', '', xml_content)
 
-        # 💡 [9pt 테스트 핵심] header.xml 내부 글자 크기(height) 속성을 900(9pt)으로 변경
+        # 💡 [핵심] section0.xml 내부의 모든 lineSpacing 및 lineSpacingValue를 120으로 강제 변환
+        xml_content = re.sub(r'lineSpacing="\d+"', 'lineSpacing="120"', xml_content)
+        xml_content = re.sub(r'value="\d+"', 'value="120"', xml_content)
+
+        # 💡 header.xml 내부 문단 스타일(paraPr)의 줄간격 관련 모든 값도 120으로 일괄 변경
         header_xml_str = template_files.get('Contents/header.xml', b'').decode('utf-8')
         if header_xml_str:
-            header_xml_str = re.sub(r'height="\d+"', 'height="900"', header_xml_str)
+            header_xml_str = re.sub(r'lineSpacing="\d+"', 'lineSpacing="120"', header_xml_str)
             header_bytes = header_xml_str.encode('utf-8')
         else:
             header_bytes = template_files.get('Contents/header.xml', b'')
@@ -149,7 +153,7 @@ if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작
         log_records.append(row_dict)
         
         progress_bar.progress(idx / total_rows)
-        progress_text.text(f"⚡ HWPX 회의록 자동 생성 중... [{idx}/{total_rows}] {doc_id}.hwpx (9pt 적용 테스트)")
+        progress_text.text(f"⚡ HWPX 회의록 자동 생성 중... [{idx}/{total_rows}] {doc_id}.hwpx (줄간격 120% 타깃 시도)")
 
     log_df = pd.DataFrame(log_records)
     
