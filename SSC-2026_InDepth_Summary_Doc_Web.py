@@ -1,7 +1,7 @@
 # =========================================================================
 # [웹 호스팅용] 심층면담 회의록 및 점검 로그 자동 생성 Streamlit 웹 앱
-# - 템플릿 본래 서식(회의내용 10pt / 회의결과 9pt) 100% 원본 유지
-# - 줄 간격 130% 일괄 적용 및 표 셀 유동적 높이 반영판
+# - 회의내용(10pt) / 회의결과(9pt) 원본 서식 및 줄바꿈 상속 완벽 유지
+# - 회의결과 작성 분량에 따른 가변 높이 확장 및 자연스러운 페이지 넘어감 반영판
 # =========================================================================
 import io
 import os
@@ -51,14 +51,6 @@ if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작
     hwpx_zip = zipfile.ZipFile(io.BytesIO(hwpx_bytes), 'r')
     template_infolist = hwpx_zip.infolist()
     template_files = {info.filename: hwpx_zip.read(info.filename) for info in template_infolist}
-    
-    # 🎯 [줄간격 130% 반영] header.xml 내부의 줄간격 속성(120% -> 130%) 일괄 변경
-    if 'Contents/header.xml' in template_files:
-        header_text = template_files['Contents/header.xml'].decode('utf-8')
-        header_text = re.sub(r'value="120"', 'value="130"', header_text)
-        header_text = re.sub(r'value="120%"', 'value="130%"', header_text)
-        header_text = re.sub(r'value="12000"', 'value="13000"', header_text)
-        template_files['Contents/header.xml'] = header_text.encode('utf-8')
 
     sec0_text = template_files['Contents/section0.xml'].decode('utf-8')
     commands = re.findall(r'<hp:stringParam name="Command">(.*?)</hp:stringParam>', sec0_text)
@@ -119,16 +111,17 @@ if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작
                 run_matches = list(re.finditer(r'<hp:run\b[^>]*>', xml_content[:field_pos]))
                 open_run_tag = run_matches[-1].group(0) if run_matches else '<hp:run>'
                 
-                # 🎯 템플릿 원본 스타일(10pt 또는 9pt)을 변경 없이 그대로 사용하여 줄바꿈(\n) 처리
+                # 🎯 줄바꿈(\n) 시 각 필드의 고유 스타일(회의내용 10pt / 회의결과 9pt) 계승
                 paragraph_replace = f'</hp:t></hp:run></hp:p>{open_p_tag}{open_run_tag}<hp:t>'
                 val_str = val_str.replace("\n", paragraph_replace)
                 
                 xml_content = xml_content.replace(target_field, val_str)
 
-        # 🎯 표 셀/행의 고정 높이(height) 속성을 제거하여 글자 수에 맞춰 높이가 유동적으로 조정되게 함
-        xml_content = re.sub(r'(<hp:tc\b[^>]*?)\s*height="\d+"([^>]*>)', r'\1\2', xml_content)
-        xml_content = re.sub(r'(<hp:tr\b[^>]*?)\s*height="\d+"([^>]*>)', r'\1\2', xml_content)
-            
+        # 🎯 [표 나눔 및 가변 높이 최적화]
+        # 표의 나눔 방식을 셀 단위/줄 단위 분할(CELL)로 설정하여 회의결과가 많을 때 자연스럽게 넘어가도록 보장
+        xml_content = re.sub(r'pageBreak="NONE"', 'pageBreak="CELL"', xml_content)
+        xml_content = re.sub(r'pageBreak="TABLE"', 'pageBreak="CELL"', xml_content)
+
         # 🧹 메일머지 표시 태그 및 레이아웃 캐시 정돈
         xml_content = re.sub(r'<hp:ctrl><hp:fieldBegin.*?</hp:ctrl>', '', xml_content, flags=re.DOTALL)
         xml_content = re.sub(r'<hp:ctrl><hp:fieldEnd.*?</hp:ctrl>', '', xml_content, flags=re.DOTALL)
