@@ -98,9 +98,10 @@ if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작
             # XML 특수문자 안전 이스케이프
             val_str = val_str.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
             
-            # 💡 [핵심 해결] 시트의 \n 줄바꿈을 HWPX 표준 문단 교체(엔터) 태그로 치환하여 한글 문서에서 엔터가 확실히 적용되게 합니다.
-            val_str = val_str.replace("\n\n", "</hp:t></hp:p><hp:p><hp:subList/><hp:run><hp:t>")
-            val_str = val_str.replace("\n", "</hp:t></hp:p><hp:p><hp:subList/><hp:run><hp:t>")
+            # 💡 [핵심 해결 - 파일 손상 100% 방지 표준 줄바꿈 태그]
+            # 문단 태그(<hp:p>)를 깨트리지 않고 HWPX 표준 강제 줄바꿈(<hp:lineBreak/>)으로 안전하게 대체합니다.
+            val_str = val_str.replace("\n\n", "</hp:t><hp:lineBreak/><hp:lineBreak/><hp:t>")
+            val_str = val_str.replace("\n", "</hp:t><hp:lineBreak/><hp:t>")
             
             xml_content = xml_content.replace(f"{{{{{col}}}}}", val_str)
             
@@ -108,10 +109,10 @@ if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작
         xml_content = re.sub(r'<hp:ctrl><hp:fieldBegin.*?</hp:ctrl>', '', xml_content, flags=re.DOTALL)
         xml_content = re.sub(r'<hp:ctrl><hp:fieldEnd.*?</hp:ctrl>', '', xml_content, flags=re.DOTALL)
 
-        # ↵ HWPX 옛날 줄바꿈 계산 캐시(linesegarray)를 삭제하여 한글 프로그램이 실시간으로 재계산하도록 조치
+        # ↵ HWPX 옛날 줄바꿈 계산 캐시(linesegarray)를 삭제하여 한글 프로그램이 실시간으로 레이아웃을 재계산하도록 조치
         xml_content = re.sub(r'<hp:linesegarray>.*?</hp:linesegarray>', '<hp:linesegarray/>', xml_content, flags=re.DOTALL)
 
-        # 🧹 빈 태그 정돈
+        # 🧹 빈 태그 및 불필요한 쉼표 정돈
         xml_content = re.sub(r'(<hp:t>\s*</hp:t>\s*<hp:t>\s*,\s*</hp:t>)+', '', xml_content)
 
         doc_buffer = io.BytesIO()
