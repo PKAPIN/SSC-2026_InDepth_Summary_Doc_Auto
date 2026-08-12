@@ -95,19 +95,21 @@ if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작
             elif isinstance(val, datetime.time): val_str = val.strftime('%H:%M')
             else: val_str = str(val).strip()
                 
-            # XML 특수문자 안전 치환
+            # XML 특수문자 안전 이스케이프
             val_str = val_str.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
             
-            # 💡 [핵심 - 파일 손상 해결] HWPX 규격에 100% 안정한 줄바꿈(lineBreak) 태그 적용
+            # 💡 [핵심 - 줄바꿈 처리 & 파일 손상 방지]
+            # 구글 시트의 \n 줄바꿈을 HWPX 표준 lineBreak 태그로 정밀 교체하여 파일 손상 없이 줄바꿈 적용
+            val_str = val_str.replace("\n\n", "</hp:t><hp:lineBreak/><hp:lineBreak/><hp:t>")
             val_str = val_str.replace("\n", "</hp:t><hp:lineBreak/><hp:t>")
             
             xml_content = xml_content.replace(f"{{{{{col}}}}}", val_str)
             
-        # 🧹 메일머지 표시 태그 완전 제거
+        # 🧹 메일머지 및 필드 시작/끝 태그 완전 제거
         xml_content = re.sub(r'<hp:ctrl><hp:fieldBegin.*?</hp:ctrl>', '', xml_content, flags=re.DOTALL)
         xml_content = re.sub(r'<hp:ctrl><hp:fieldEnd.*?</hp:ctrl>', '', xml_content, flags=re.DOTALL)
 
-        # ↵ HWPX 옛날 줄바꿈 캐시(linesegarray)를 삭제하여 한글이 실시간으로 줄바꿈 재계산하도록 유도
+        # ↵ HWPX 옛날 줄바꿈 계산 캐시(linesegarray)를 삭제하여 한글 프로그램이 실시간으로 재계산하도록 조치
         xml_content = re.sub(r'<hp:linesegarray>.*?</hp:linesegarray>', '<hp:linesegarray/>', xml_content, flags=re.DOTALL)
 
         # 🧹 빈 태그 정돈
