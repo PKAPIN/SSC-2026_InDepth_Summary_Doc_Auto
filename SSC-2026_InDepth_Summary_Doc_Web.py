@@ -1,6 +1,6 @@
 # =========================================================================
 # [웹 호스팅용] 심층면담 회의록 및 점검 로그 자동 생성 Streamlit 웹 앱
-# - 줄바꿈(\n) 시 첫 행의 paraPrIDRef / charPrIDRef 스타일 완벽 상속 보장판
+# - 모든 줄바꿈(\n) 시 첫 행 스타일(10pt/맑은고딕/120%) 100% 완벽 통일판
 # =========================================================================
 import io
 import os
@@ -101,18 +101,16 @@ if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작
             
             target_field = f"{{{{{col}}}}}"
             if target_field in xml_content:
-                # 💡 [핵심] 필드가 위치한 첫 행의 <hp:p> 문단 속성 및 <hp:run> 글자 속성을 정확히 감지
-                p_pattern = r'(<hp:p\b[^>]*>)\s*(?:<hp:run\b[^>]*>)*\s*<hp:t>\s*' + re.escape(target_field)
-                p_match = re.search(p_pattern, xml_content)
+                field_pos = xml_content.find(target_field)
                 
-                run_pattern = r'(<hp:run\b[^>]*>)\s*<hp:t>\s*' + re.escape(target_field)
-                run_match = re.search(run_pattern, xml_content)
+                # 🎯 [핵심] 치환 필드가 위치한 직전의 <hp:p ...> 및 <hp:run ...> 속성 태그를 정확히 추출
+                p_matches = list(re.finditer(r'<hp:p\b[^>]*>', xml_content[:field_pos]))
+                open_p_tag = p_matches[-1].group(0) if p_matches else '<hp:p>'
                 
-                # 첫 행에 지정되어 있던 문단/글자 속성 태그 추출 (없으면 기본 태그)
-                open_p_tag = p_match.group(1) if p_match else '<hp:p>'
-                open_run_tag = run_match.group(1) if run_match else '<hp:run>'
+                run_matches = list(re.finditer(r'<hp:run\b[^>]*>', xml_content[:field_pos]))
+                open_run_tag = run_matches[-1].group(0) if run_matches else '<hp:run>'
                 
-                # 엔터(\n) 발생 시, 첫 행과 100% 동일한 문단/글자 스타일 속성을 주입하며 새 문단 생성
+                # 엔터(\n) 발생 시 추출한 속성 태그(10pt / 맑은고딕 / 120%)를 그대로 주입하여 똑같은 스타일로 문단 생성
                 paragraph_replace = f'</hp:t></hp:run></hp:p>{open_p_tag}{open_run_tag}<hp:t>'
                 val_str = val_str.replace("\n", paragraph_replace)
                 
