@@ -95,21 +95,22 @@ if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작
             elif isinstance(val, datetime.time): val_str = val.strftime('%H:%M')
             else: val_str = str(val).strip()
                 
-            # 특수문자 이스케이프 및 줄바꿈 정돈
+            # 특수문자 이스케이프 및 줄바꿈 정리
             val_str = val_str.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
             val_str = val_str.replace("\r\n", "\n").replace("\r", "\n")
-            val_str = val_str.replace("\n\n", "\n")  # 이중 줄바꿈 단일화
+            val_str = val_str.replace("\n\n", "\n")  # 불필요한 연속 공백 줄바꿈 단일화
             
-            # HWPX 문단 단위 줄바꿈 교체
+            # 💡 [핵심 - 한글 표준 문단 치환]
+            # \n을 만났을 때 HWPX 표준 문단을 분리하여 확실한 엔터(줄바꿈) 적용
             val_str = val_str.replace("\n", "</hp:t></hp:run></hp:p><hp:p><hp:run><hp:t>")
             
             xml_content = xml_content.replace(f"{{{{{col}}}}}", val_str)
             
-        # 🧹 메일머지 표시 태그 제거
+        # 🧹 메일머지 표시 태그 깔끔하게 정리
         xml_content = re.sub(r'<hp:ctrl><hp:fieldBegin.*?</hp:ctrl>', '', xml_content, flags=re.DOTALL)
         xml_content = re.sub(r'<hp:ctrl><hp:fieldEnd.*?</hp:ctrl>', '', xml_content, flags=re.DOTALL)
 
-        # ↵ HWPX 옛날 줄바꿈 계산 캐시(linesegarray) 삭제
+        # ↵ HWPX 줄바꿈 계산 캐시(linesegarray) 삭제하여 한글 프로그램이 실시간으로 120% 줄간격 재계산하도록 유도
         xml_content = re.sub(r'<hp:linesegarray>.*?</hp:linesegarray>', '<hp:linesegarray/>', xml_content, flags=re.DOTALL)
 
         # 🧹 빈 쉼표 정돈
