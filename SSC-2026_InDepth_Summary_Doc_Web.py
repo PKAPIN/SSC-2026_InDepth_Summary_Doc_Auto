@@ -1,6 +1,7 @@
 # =========================================================================
 # [웹 호스팅용] 심층면담 회의록 및 점검 로그 자동 생성 Streamlit 웹 앱
-# - 표 셀 고정 높이 완벽 제거로 1페이지 고정 및 가변 높이 자동 조절판
+# - 회의내용/회의결과 상호 공간 재배분(유동 높이 흡수) 최적화판
+# - 1페이지 표 틀 및 하단 로고 위치 완전 고정
 # =========================================================================
 import io
 import os
@@ -84,6 +85,27 @@ if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작
         xml_content = template_files['Contents/section0.xml'].decode('utf-8')
         missing_fields = []
 
+        # 1. 각 셀에 들어갈 줄 수 동적 파악
+        content_text = str(row.get('회의내용', '')).strip() if pd.notna(row.get('회의내용')) else ""
+        result_text = str(row.get('회의결과', '')).strip() if pd.notna(row.get('회의결과')) else ""
+
+        c_lines = max(1, len(content_text.splitlines()))
+        r_lines = max(1, len(result_text.splitlines()))
+
+        # 1페이지 로고 상단에 표를 완전히 가두기 위한 총 높이 예산 (약 25,000 unit)
+        TOTAL_ALLOWANCE = 25000
+        # 줄당 높이 추정치
+        LINE_HEIGHT_C = 1100  # 10pt 기준
+        LINE_HEIGHT_R = 1000  # 9pt 기준
+
+        # 회의내용이 필요한 최소 공간 계산
+        needed_c_height = max(3500, c_lines * LINE_HEIGHT_C + 1500)
+        
+        # 남은 유동 공간을 회의결과 셀이 모두 흡수
+        assigned_r_height = max(3500, TOTAL_ALLOWANCE - needed_c_height)
+        assigned_c_height = TOTAL_ALLOWANCE - assigned_r_height
+
+        # 2. 치환 및 줄바꿈 상속 처리
         for col in data_df.columns:
             if col == '일시_dt': continue
             val = row[col]
@@ -113,11 +135,19 @@ if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작
                 
                 xml_content = xml_content.replace(target_field, val_str)
 
-        # 🎯 [핵심 해결 로직]
-        # 회의내용/회의결과 표 셀에 지정된 고정 높이(height) 속성을 완전히 삭제하여
-        # 입력된 글자 수만큼만 높이를 차지하고 불필요한 빈 여백을 없앰
-        xml_content = re.sub(r'(<hp:tc\b[^>]*?)\s*height="\d+"', r'\1', xml_content)
-        xml_content = re.sub(r'(<hp:tr\b[^>]*?)\s*height="\d+"', r'\1', xml_content)
+        # 🎯 3. [핵심] 템플릿의 무거운 고정 높이를 날리고, 재배분된 계산 높이를 능동적으로 세팅
+        # 회의내용 셀 높이 강제 재조정
+        xml_content = re.sub(
+            r'(<hp:tc\b[^>]*?)(height="\d+")([^>]*?>[\s\S]*?\{\{회의내용\}\}|<hp:tc\b[^>]*?)(height="\d+")([^>]*?>[\s\S]*?회의내용)',
+            rf'\1height="{assigned_c_height}"\3',
+            xml_content
+        )
+        # 회의결과 셀 높이 강제 재조정
+        xml_content = re.sub(
+            r'(<hp:tc\b[^>]*?)(height="\d+")([^>]*?>[\s\S]*?\{\{회의결과\}\}|<hp:tc\b[^>]*?)(height="\d+")([^>]*?>[\s\S]*?회의결과)',
+            rf'\1height="{assigned_r_height}"\3',
+            xml_content
+        )
 
         # 🧹 메일머지 표시 태그 및 레이아웃 캐시 정돈
         xml_content = re.sub(r'<hp:ctrl><hp:fieldBegin.*?</hp:ctrl>', '', xml_content, flags=re.DOTALL)
