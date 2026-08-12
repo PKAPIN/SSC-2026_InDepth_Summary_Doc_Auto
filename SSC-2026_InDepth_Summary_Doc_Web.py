@@ -1,3 +1,6 @@
+# =========================================================================
+# [Python Streamlit 수정 코드 - header.xml 및 section0.xml 동시 처리]
+# =========================================================================
 import io
 import os
 import glob
@@ -10,11 +13,6 @@ import openpyxl
 from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
 import streamlit as st
 
-# =========================================================================
-# [웹 호스팅용] 심층면담 회의록 및 점검 로그 자동 생성 Streamlit 웹 앱
-# =========================================================================
-
-# Mac 및 클라우드 SSL 인증서 연결 오류 방지
 ssl._create_default_https_context = ssl._create_unverified_context
 
 st.set_page_config(page_title="심층면담 회의록 자동 생성 시스템", page_icon="📄", layout="wide")
@@ -52,6 +50,16 @@ if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작
     template_infolist = hwpx_zip.infolist()
     template_files = {info.filename: hwpx_zip.read(info.filename) for info in template_infolist}
     
+    # -------------------------------------------------------------------------
+    # 💡 [핵심 추가] header.xml 및 section0.xml 줄간격(Line Spacing) 120% 설정 로직
+    # -------------------------------------------------------------------------
+    header_xml_str = template_files.get('Contents/header.xml', b'').decode('utf-8')
+    if header_xml_str:
+        # 기존 lineSpacing="160" 또는 기타 숫자를 120으로 강제 치환
+        header_xml_str = re.sub(r'lineSpacing="\d+"', 'lineSpacing="120"', header_xml_str)
+        # 줄간격 타입이 percent 인 경우 보장
+        template_files['Contents/header.xml'] = header_xml_str.encode('utf-8')
+
     sec0_text = template_files['Contents/section0.xml'].decode('utf-8')
     commands = re.findall(r'<hp:stringParam name="Command">(.*?)</hp:stringParam>', sec0_text)
     
@@ -100,26 +108,31 @@ if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작
             val_str = val_str.replace("\r\n", "\n").replace("\r", "\n")
             val_str = val_str.replace("\n\n", "\n")  # 연속 이중 줄바꿈 단일화
             
-            # 💡 [핵심] HWPX 표 셀 내부 문단 단위 엔터(줄바꿈) 치환 구문
+            # HWPX 표 셀 내부 문단 단위 엔터(줄바꿈) 치환 구문
             val_str = val_str.replace("\n", "</hp:t></hp:run></hp:p><hp:p><hp:run><hp:t>")
             
             xml_content = xml_content.replace(f"{{{{{col}}}}}", val_str)
             
-        # 🧹 메일머지 표시 태그 깔끔하게 정리
+        # 🧹 메일머지 및 캐시 정돈
         xml_content = re.sub(r'<hp:ctrl><hp:fieldBegin.*?</hp:ctrl>', '', xml_content, flags=re.DOTALL)
         xml_content = re.sub(r'<hp:ctrl><hp:fieldEnd.*?</hp:ctrl>', '', xml_content, flags=re.DOTALL)
-
-        # ↵ HWPX 옛날 줄바꿈 계산 캐시(linesegarray) 삭제
         xml_content = re.sub(r'<hp:linesegarray>.*?</hp:linesegarray>', '<hp:linesegarray/>', xml_content, flags=re.DOTALL)
-
-        # 🧹 빈 쉼표 정돈
         xml_content = re.sub(r'(<hp:t>\s*</hp:t>\s*<hp:t>\s*,\s*</hp:t>)+', '', xml_content)
+
+        # 💡 [핵심] section0.xml 내부 개별 문단(hp:p) 속성에도 lineSpacing이 있을 경우 120% 고정
+        xml_content = re.sub(r'lineSpacing="\d+"', 'lineSpacing="120"', xml_content)
 
         doc_buffer = io.BytesIO()
         with zipfile.ZipFile(doc_buffer, 'w') as z_out:
             for info in template_infolist:
                 fname = info.filename
-                content_bytes = xml_content.encode('utf-8') if fname == 'Contents/section0.xml' else template_files[fname]
+                if fname == 'Contents/section0.xml':
+                    content_bytes = xml_content.encode('utf-8')
+                elif fname == 'Contents/header.xml':
+                    content_bytes = template_files['Contents/header.xml']
+                else:
+                    content_bytes = template_files[fname]
+                    
                 new_info = zipfile.ZipInfo(fname)
                 new_info.compress_type = info.compress_type
                 z_out.writestr(new_info, content_bytes)
@@ -198,15 +211,12 @@ if 'generated_data' in st.session_state:
     st.success(f"🎉 구글 시트 연결 성공! 총 **{len(data['doc_ids'])}건**의 회의록 및 점검 로그가 시간순으로 생성되었습니다.")
 
     st.subheader("📋 생성로그 미리보기 {시간순} & 선택 문서 다운로드")
-    st.markdown("아래 표의 맨 앞 **`선택` 체크박스**를 클릭하여 다운로드할 회의록 문서를 지정할 수 있습니다.")
-
     col_btn1, col_btn2, col_btn3, col_btn4 = st.columns([1.5, 1, 1, 1.5])
     
     with col_btn1:
         st.download_button(
             label=f"📦 전체 일괄 다운로드 ({len(data['doc_ids'])}건 ZIP)",
-            data=data['all_zip_bytes'],
-            file_name=f"{data['folder_name']}.zip",
+            data=data['all_zip_bytes'], file_name=f"{data['folder_name']}.zip",
             mime="application/zip", use_container_width=True, key="btn_download_all"
         )
         
