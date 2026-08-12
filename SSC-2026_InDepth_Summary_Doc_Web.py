@@ -1,6 +1,6 @@
 # =========================================================================
 # [웹 호스팅용] 심층면담 회의록 및 점검 로그 자동 생성 Streamlit 웹 앱
-# - HWPX section0.xml 내부 paraPr 개별 줄간격(120%) 강제 개편판
+# - 회의내용/결과 맑은 고딕 원본 폰트 서식 완전 복원판
 # =========================================================================
 import io
 import os
@@ -99,41 +99,34 @@ if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작
             val_str = val_str.replace("\r\n", "\n").replace("\r", "\n")
             val_str = val_str.replace("\n\n", "\n")
             
-            # HWPX 엔터 치환
-            paragraph_replace = '</hp:t></hp:run></hp:p><hp:p><hp:run><hp:t>'
-            val_str = val_str.replace("\n", paragraph_replace)
+            # 💡 [핵심 복구] 원래 서식(맑은 고딕) 스타일 ID를 온전히 유지하며 엔터 치환
+            field_pattern = f"{{{{{col}}}}}"
+            if field_pattern in xml_content:
+                # 필드가 위치한 문단(<hp:p>)의 서식(paraPrRef / charPrRef)을 감지하여 엔터 치환에 상속
+                m = re.search(r'<hp:p([^>]*)>.*?\{\{' + re.escape(col) + r'\}\}.*?</hp:p>', xml_content, re.DOTALL)
+                if m:
+                    p_attrs = m.group(1)
+                    # 문단 내 run 서식 속성 가져오기
+                    run_match = re.search(r'<hp:run([^>]*)>', m.group(0))
+                    run_attrs = run_match.group(1) if run_match else ""
+                    paragraph_replace = f'</hp:t></hp:run></hp:p><hp:p{p_attrs}><hp:run{run_attrs}><hp:t>'
+                else:
+                    paragraph_replace = '</hp:t></hp:run></hp:p><hp:p><hp:run><hp:t>'
+                
+                val_str = val_str.replace("\n", paragraph_replace)
+                xml_content = xml_content.replace(field_pattern, val_str)
             
-            xml_content = xml_content.replace(f"{{{{{col}}}}}", val_str)
-            
-        # 🧹 메일머지 표시 태그 및 레이아웃 캐시 정돈 (linesegarray 제거로 재계산 유도)
+        # 🧹 메일머지 표시 태그 및 레이아웃 캐시 정돈
         xml_content = re.sub(r'<hp:ctrl><hp:fieldBegin.*?</hp:ctrl>', '', xml_content, flags=re.DOTALL)
         xml_content = re.sub(r'<hp:ctrl><hp:fieldEnd.*?</hp:ctrl>', '', xml_content, flags=re.DOTALL)
         xml_content = re.sub(r'<hp:linesegarray>.*?</hp:linesegarray>', '<hp:linesegarray/>', xml_content, flags=re.DOTALL)
         xml_content = re.sub(r'(<hp:t>\s*</hp:t>\s*<hp:t>\s*,\s*</hp:t>)+', '', xml_content)
 
-        # 💡 [핵심] section0.xml 내부의 모든 lineSpacing 및 lineSpacingValue를 120으로 강제 변환
-        xml_content = re.sub(r'lineSpacing="\d+"', 'lineSpacing="120"', xml_content)
-        xml_content = re.sub(r'value="\d+"', 'value="120"', xml_content)
-
-        # 💡 header.xml 내부 문단 스타일(paraPr)의 줄간격 관련 모든 값도 120으로 일괄 변경
-        header_xml_str = template_files.get('Contents/header.xml', b'').decode('utf-8')
-        if header_xml_str:
-            header_xml_str = re.sub(r'lineSpacing="\d+"', 'lineSpacing="120"', header_xml_str)
-            header_bytes = header_xml_str.encode('utf-8')
-        else:
-            header_bytes = template_files.get('Contents/header.xml', b'')
-
         doc_buffer = io.BytesIO()
         with zipfile.ZipFile(doc_buffer, 'w') as z_out:
             for info in template_infolist:
                 fname = info.filename
-                if fname == 'Contents/section0.xml':
-                    content_bytes = xml_content.encode('utf-8')
-                elif fname == 'Contents/header.xml':
-                    content_bytes = header_bytes
-                else:
-                    content_bytes = template_files[fname]
-                    
+                content_bytes = xml_content.encode('utf-8') if fname == 'Contents/section0.xml' else template_files[fname]
                 new_info = zipfile.ZipInfo(fname)
                 new_info.compress_type = info.compress_type
                 z_out.writestr(new_info, content_bytes)
@@ -153,7 +146,7 @@ if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작
         log_records.append(row_dict)
         
         progress_bar.progress(idx / total_rows)
-        progress_text.text(f"⚡ HWPX 회의록 자동 생성 중... [{idx}/{total_rows}] {doc_id}.hwpx (줄간격 120% 타깃 시도)")
+        progress_text.text(f"⚡ HWPX 회의록 자동 생성 중... [{idx}/{total_rows}] {doc_id}.hwpx")
 
     log_df = pd.DataFrame(log_records)
     
