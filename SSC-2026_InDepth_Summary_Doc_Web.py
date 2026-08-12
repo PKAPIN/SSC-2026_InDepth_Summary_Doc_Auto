@@ -1,6 +1,6 @@
 # =========================================================================
 # [웹 호스팅용] 심층면담 회의록 및 점검 로그 자동 생성 Streamlit 웹 앱
-# - 폰트 크기 27pt 버그 수정 및 원본 서식(맑은 고딕 10pt) 완전 정돈판
+# - 줄바꿈(\n) 시 첫 행의 paraPrIDRef / charPrIDRef 스타일 완벽 상속 보장판
 # =========================================================================
 import io
 import os
@@ -99,11 +99,24 @@ if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작
             val_str = val_str.replace("\r\n", "\n").replace("\r", "\n")
             val_str = val_str.replace("\n\n", "\n")
             
-            # 💡 [핵심 버그 수정] 가장 안전한 순수 문단/실행 태그 치환 (폰트 깨짐 완벽 방지)
-            paragraph_replace = '</hp:t></hp:run></hp:p><hp:p><hp:run><hp:t>'
-            val_str = val_str.replace("\n", paragraph_replace)
-            
-            xml_content = xml_content.replace(f"{{{{{col}}}}}", val_str)
+            target_field = f"{{{{{col}}}}}"
+            if target_field in xml_content:
+                # 💡 [핵심] 필드가 위치한 첫 행의 <hp:p> 문단 속성 및 <hp:run> 글자 속성을 정확히 감지
+                p_pattern = r'(<hp:p\b[^>]*>)\s*(?:<hp:run\b[^>]*>)*\s*<hp:t>\s*' + re.escape(target_field)
+                p_match = re.search(p_pattern, xml_content)
+                
+                run_pattern = r'(<hp:run\b[^>]*>)\s*<hp:t>\s*' + re.escape(target_field)
+                run_match = re.search(run_pattern, xml_content)
+                
+                # 첫 행에 지정되어 있던 문단/글자 속성 태그 추출 (없으면 기본 태그)
+                open_p_tag = p_match.group(1) if p_match else '<hp:p>'
+                open_run_tag = run_match.group(1) if run_match else '<hp:run>'
+                
+                # 엔터(\n) 발생 시, 첫 행과 100% 동일한 문단/글자 스타일 속성을 주입하며 새 문단 생성
+                paragraph_replace = f'</hp:t></hp:run></hp:p>{open_p_tag}{open_run_tag}<hp:t>'
+                val_str = val_str.replace("\n", paragraph_replace)
+                
+                xml_content = xml_content.replace(target_field, val_str)
             
         # 🧹 메일머지 표시 태그 및 레이아웃 캐시 정돈
         xml_content = re.sub(r'<hp:ctrl><hp:fieldBegin.*?</hp:ctrl>', '', xml_content, flags=re.DOTALL)
