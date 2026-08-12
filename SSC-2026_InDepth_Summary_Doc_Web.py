@@ -1,7 +1,6 @@
 # =========================================================================
 # [웹 호스팅용] 심층면담 회의록 및 점검 로그 자동 생성 Streamlit 웹 앱
-# - 표 하단 로고 위치 1페이지 고정
-# - 회의내용/회의결과 글자 수 비율에 따른 두 셀 높이 유동 자동 조절판
+# - 표 셀 고정 높이 완벽 제거로 1페이지 고정 및 가변 높이 자동 조절판
 # =========================================================================
 import io
 import os
@@ -85,30 +84,6 @@ if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작
         xml_content = template_files['Contents/section0.xml'].decode('utf-8')
         missing_fields = []
 
-        # 1. 텍스트 데이터 준비 및 분량(줄 수) 계산
-        content_val = str(row.get('회의내용', '')).strip() if pd.notna(row.get('회의내용')) else ""
-        result_val = str(row.get('회의결과', '')).strip() if pd.notna(row.get('회의결과')) else ""
-
-        lines_content = max(1, len(content_val.splitlines()))
-        lines_result = max(1, len(result_val.splitlines()))
-
-        # 2. 1페이지 내 두 셀이 공유할 총 높이 예산 (HWP 유닛 단위: 약 32,000 ~ 36,000)
-        TOTAL_AVAILABLE_HEIGHT = 35000 
-        MIN_HEIGHT_EACH = 6000 # 각 셀 최소 확보 높이
-
-        total_lines = lines_content + lines_result
-        height_content = int(TOTAL_AVAILABLE_HEIGHT * (lines_content / total_lines))
-        height_result = TOTAL_AVAILABLE_HEIGHT - height_content
-
-        # 최소 높이 보장
-        if height_content < MIN_HEIGHT_EACH:
-            height_content = MIN_HEIGHT_EACH
-            height_result = TOTAL_AVAILABLE_HEIGHT - MIN_HEIGHT_EACH
-        elif height_result < MIN_HEIGHT_EACH:
-            height_result = MIN_HEIGHT_EACH
-            height_content = TOTAL_AVAILABLE_HEIGHT - MIN_HEIGHT_EACH
-
-        # 3. 데이터 치환 및 스타일 유지
         for col in data_df.columns:
             if col == '일시_dt': continue
             val = row[col]
@@ -138,19 +113,11 @@ if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작
                 
                 xml_content = xml_content.replace(target_field, val_str)
 
-        # 4. 🎯 [핵심] 회의내용 / 회의결과 두 셀의 높이를 비율에 맞게 XML 상에서 직접 지정
-        # 회의내용 셀/행 높이 할당
-        xml_content = re.sub(
-            r'(<hp:tc\b[^>]*?)(height="\d+")([^>]*?>\s*<hp:subList[^>]*?>\s*<hp:p[^>]*?>\s*<hp:run[^>]*?>\s*<hp:t>[^<]*?회의내용)',
-            rf'\1height="{height_content}"\3',
-            xml_content
-        )
-        # 회의결과 셀/행 높이 할당
-        xml_content = re.sub(
-            r'(<hp:tc\b[^>]*?)(height="\d+")([^>]*?>\s*<hp:subList[^>]*?>\s*<hp:p[^>]*?>\s*<hp:run[^>]*?>\s*<hp:t>[^<]*?회의결과)',
-            rf'\1height="{height_result}"\3',
-            xml_content
-        )
+        # 🎯 [핵심 해결 로직]
+        # 회의내용/회의결과 표 셀에 지정된 고정 높이(height) 속성을 완전히 삭제하여
+        # 입력된 글자 수만큼만 높이를 차지하고 불필요한 빈 여백을 없앰
+        xml_content = re.sub(r'(<hp:tc\b[^>]*?)\s*height="\d+"', r'\1', xml_content)
+        xml_content = re.sub(r'(<hp:tr\b[^>]*?)\s*height="\d+"', r'\1', xml_content)
 
         # 🧹 메일머지 표시 태그 및 레이아웃 캐시 정돈
         xml_content = re.sub(r'<hp:ctrl><hp:fieldBegin.*?</hp:ctrl>', '', xml_content, flags=re.DOTALL)
