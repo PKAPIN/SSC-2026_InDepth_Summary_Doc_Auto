@@ -1,6 +1,6 @@
 # =========================================================================
 # [웹 호스팅용] 심층면담 회의록 및 점검 로그 자동 생성 Streamlit 웹 앱
-# - 회의내용/결과 맑은 고딕 원본 폰트 서식 완전 복원판
+# - 폰트 크기 27pt 버그 수정 및 원본 서식(맑은 고딕 10pt) 완전 정돈판
 # =========================================================================
 import io
 import os
@@ -99,22 +99,11 @@ if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작
             val_str = val_str.replace("\r\n", "\n").replace("\r", "\n")
             val_str = val_str.replace("\n\n", "\n")
             
-            # 💡 [핵심 복구] 원래 서식(맑은 고딕) 스타일 ID를 온전히 유지하며 엔터 치환
-            field_pattern = f"{{{{{col}}}}}"
-            if field_pattern in xml_content:
-                # 필드가 위치한 문단(<hp:p>)의 서식(paraPrRef / charPrRef)을 감지하여 엔터 치환에 상속
-                m = re.search(r'<hp:p([^>]*)>.*?\{\{' + re.escape(col) + r'\}\}.*?</hp:p>', xml_content, re.DOTALL)
-                if m:
-                    p_attrs = m.group(1)
-                    # 문단 내 run 서식 속성 가져오기
-                    run_match = re.search(r'<hp:run([^>]*)>', m.group(0))
-                    run_attrs = run_match.group(1) if run_match else ""
-                    paragraph_replace = f'</hp:t></hp:run></hp:p><hp:p{p_attrs}><hp:run{run_attrs}><hp:t>'
-                else:
-                    paragraph_replace = '</hp:t></hp:run></hp:p><hp:p><hp:run><hp:t>'
-                
-                val_str = val_str.replace("\n", paragraph_replace)
-                xml_content = xml_content.replace(field_pattern, val_str)
+            # 💡 [핵심 버그 수정] 가장 안전한 순수 문단/실행 태그 치환 (폰트 깨짐 완벽 방지)
+            paragraph_replace = '</hp:t></hp:run></hp:p><hp:p><hp:run><hp:t>'
+            val_str = val_str.replace("\n", paragraph_replace)
+            
+            xml_content = xml_content.replace(f"{{{{{col}}}}}", val_str)
             
         # 🧹 메일머지 표시 태그 및 레이아웃 캐시 정돈
         xml_content = re.sub(r'<hp:ctrl><hp:fieldBegin.*?</hp:ctrl>', '', xml_content, flags=re.DOTALL)
