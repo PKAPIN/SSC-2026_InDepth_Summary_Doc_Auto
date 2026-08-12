@@ -1,6 +1,6 @@
 # =========================================================================
 # [웹 호스팅용] 심층면담 회의록 및 점검 로그 자동 생성 Streamlit 웹 앱
-# - 회의록 1쪽 초과 방지: 글자수에 따른 줄간격 자동 조절 (120% / 160%)
+# - 회의록 1쪽 초과 방지: 문단 생성 시 줄간격 120% XML 강제 적용
 # =========================================================================
 import io
 import os
@@ -86,15 +86,14 @@ if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작
         missing_fields = []
         
         # ---------------------------------------------------------------------
-        # 💡 [글자수 자동 계산 및 줄간격 유동 조절]
-        # - 텍스트량이 많으면 120%, 여유로우면 160%(원본 양식 유지)
+        # 💡 [글자수 자동 측정 및 120% / 160% 스위칭]
         # ---------------------------------------------------------------------
         content_text = str(row.get('회의내용', '')) if pd.notna(row.get('회의내용', '')) else ""
         result_text = str(row.get('회의결과', '')) if pd.notna(row.get('회의결과', '')) else ""
         total_len = len(content_text) + len(result_text)
         
-        # 총 글자수가 600자를 넘으면 120%로 타이트하게 조절하여 2쪽 넘어감 방지
-        target_line_spacing = "120" if total_len > 600 else "160"
+        # 회의내용 + 회의결과 총합이 500자를 넘어가면 줄간격 120%로 강제 조율
+        target_line_spacing = "120" if total_len > 500 else "160"
         
         for col in data_df.columns:
             if col == '일시_dt': continue
@@ -111,8 +110,9 @@ if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작
             val_str = val_str.replace("\r\n", "\n").replace("\r", "\n")
             val_str = val_str.replace("\n\n", "\n")  # 연속 이중 줄바꿈 단일화
             
-            # HWPX 표 셀 내부 문단 단위 엔터(줄바꿈) 치환 구문
-            val_str = val_str.replace("\n", "</hp:t></hp:run></hp:p><hp:p><hp:run><hp:t>")
+            # 💡 [핵심] 줄바꿈(\n) 시 생성되는 새 문단(hp:p)마다 target_line_spacing 속성 강제 직접 주입!
+            paragraph_replace = f'</hp:t></hp:run></hp:p><hp:p lineSpacing="{target_line_spacing}" lineSpacingType="percent"><hp:run><hp:t>'
+            val_str = val_str.replace("\n", paragraph_replace)
             
             xml_content = xml_content.replace(f"{{{{{col}}}}}", val_str)
             
@@ -122,10 +122,9 @@ if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작
         xml_content = re.sub(r'<hp:linesegarray>.*?</hp:linesegarray>', '<hp:linesegarray/>', xml_content, flags=re.DOTALL)
         xml_content = re.sub(r'(<hp:t>\s*</hp:t>\s*<hp:t>\s*,\s*</hp:t>)+', '', xml_content)
 
-        # 💡 [핵심] section0.xml 내 문단 줄간격 동적 고정
+        # 💡 section0.xml 및 header.xml 내 모든 lineSpacing 속성을 동적으로 변경
         xml_content = re.sub(r'lineSpacing="\d+"', f'lineSpacing="{target_line_spacing}"', xml_content)
 
-        # 💡 [핵심] header.xml 내 스타일 정의 줄간격 동적 고정
         header_xml_str = template_files.get('Contents/header.xml', b'').decode('utf-8')
         if header_xml_str:
             header_xml_str = re.sub(r'lineSpacing="\d+"', f'lineSpacing="{target_line_spacing}"', header_xml_str)
@@ -163,7 +162,7 @@ if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작
         log_records.append(row_dict)
         
         progress_bar.progress(idx / total_rows)
-        progress_text.text(f"⚡ HWPX 회의록 자동 생성 중... [{idx}/{total_rows}] {doc_id}.hwpx (적용 줄간격: {target_line_spacing}%)")
+        progress_text.text(f"⚡ HWPX 회의록 자동 생성 중... [{idx}/{total_rows}] {doc_id}.hwpx (줄간격 {target_line_spacing}% 자동 적용)")
 
     log_df = pd.DataFrame(log_records)
     
