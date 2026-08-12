@@ -85,41 +85,32 @@ if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작
         xml_content = template_files['Contents/section0.xml'].decode('utf-8')
         missing_fields = []
         
-# =========================================================================
-        # ↵ [수정] HWPX 텍스트 및 줄바꿈(\n) 정밀 치환 로직
-        # =========================================================================
         for col in data_df.columns:
             if col == '일시_dt': continue
             val = row[col]
             if pd.isna(val) or str(val).strip() == "" or str(val).strip().lower() == "nan":
                 val_str = ""
                 if col in merge_fields: missing_fields.append(col)
-            elif isinstance(val, (pd.Timestamp, datetime.datetime)): 
-                val_str = val.strftime('%Y-%m-%d')
-            elif isinstance(val, datetime.time): 
-                val_str = val.strftime('%H:%M')
-            else: 
-                val_str = str(val).strip()
+            elif isinstance(val, (pd.Timestamp, datetime.datetime)): val_str = val.strftime('%Y-%m-%d')
+            elif isinstance(val, datetime.time): val_str = val.strftime('%H:%M')
+            else: val_str = str(val).strip()
                 
-            # XML 특수문자 이스케이프
+            # XML 특수문자 안전 치환
             val_str = val_str.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
             
-            # 💡 [핵심 보완] 줄바꿈(\n) 입력 시 HWPX 강제 줄바꿈 태그 삽입
-            # 단순 lineBreak만 넣는 대신, 공백 태그 정돈과 함께 한글이 확실히 줄을 넘기도록 처리
-            val_str = val_str.replace("\n", "</hp:t></hp:p><hp:p><hp:subList/><hp:run><hp:t>")
-            # 만약 위 구문으로 템플릿이 깨진다면 아래 주석 처리된 안전 치환 태그를 사용하세요:
-            # val_str = val_str.replace("\n", "</hp:t><hp:lineBreak/><hp:t>")
+            # 💡 [핵심 - 파일 손상 해결] HWPX 규격에 100% 안정한 줄바꿈(lineBreak) 태그 적용
+            val_str = val_str.replace("\n", "</hp:t><hp:lineBreak/><hp:t>")
             
             xml_content = xml_content.replace(f"{{{{{col}}}}}", val_str)
             
-        # 🧹 메일머지 및 필드 시작/끝 태그 완전 제거
+        # 🧹 메일머지 표시 태그 완전 제거
         xml_content = re.sub(r'<hp:ctrl><hp:fieldBegin.*?</hp:ctrl>', '', xml_content, flags=re.DOTALL)
         xml_content = re.sub(r'<hp:ctrl><hp:fieldEnd.*?</hp:ctrl>', '', xml_content, flags=re.DOTALL)
 
-        # ↵ HWPX 옛날 줄바꿈 계산 캐시(linesegarray)를 삭제하여 한글이 실행 시 재계산하도록 강제
+        # ↵ HWPX 옛날 줄바꿈 캐시(linesegarray)를 삭제하여 한글이 실시간으로 줄바꿈 재계산하도록 유도
         xml_content = re.sub(r'<hp:linesegarray>.*?</hp:linesegarray>', '<hp:linesegarray/>', xml_content, flags=re.DOTALL)
 
-        # 🧹 빈 줄이나 중복 쉼표 정돈
+        # 🧹 빈 태그 정돈
         xml_content = re.sub(r'(<hp:t>\s*</hp:t>\s*<hp:t>\s*,\s*</hp:t>)+', '', xml_content)
 
         doc_buffer = io.BytesIO()
