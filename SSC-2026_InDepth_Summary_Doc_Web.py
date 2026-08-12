@@ -1,6 +1,7 @@
 # =========================================================================
 # [웹 호스팅용] 심층면담 회의록 및 점검 로그 자동 생성 Streamlit 웹 앱
-# - 모든 줄바꿈(\n) 시 첫 행 스타일(10pt/맑은고딕/120%) 100% 완벽 통일판
+# - 템플릿 본래 서식(회의내용 10pt / 회의결과 9pt) 100% 원본 유지
+# - 줄 간격 130% 일괄 적용 및 표 셀 유동적 높이 반영판
 # =========================================================================
 import io
 import os
@@ -51,6 +52,14 @@ if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작
     template_infolist = hwpx_zip.infolist()
     template_files = {info.filename: hwpx_zip.read(info.filename) for info in template_infolist}
     
+    # 🎯 [줄간격 130% 반영] header.xml 내부의 줄간격 속성(120% -> 130%) 일괄 변경
+    if 'Contents/header.xml' in template_files:
+        header_text = template_files['Contents/header.xml'].decode('utf-8')
+        header_text = re.sub(r'value="120"', 'value="130"', header_text)
+        header_text = re.sub(r'value="120%"', 'value="130%"', header_text)
+        header_text = re.sub(r'value="12000"', 'value="13000"', header_text)
+        template_files['Contents/header.xml'] = header_text.encode('utf-8')
+
     sec0_text = template_files['Contents/section0.xml'].decode('utf-8')
     commands = re.findall(r'<hp:stringParam name="Command">(.*?)</hp:stringParam>', sec0_text)
     
@@ -83,7 +92,7 @@ if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작
             
         xml_content = template_files['Contents/section0.xml'].decode('utf-8')
         missing_fields = []
-        
+
         for col in data_df.columns:
             if col == '일시_dt': continue
             val = row[col]
@@ -103,18 +112,22 @@ if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작
             if target_field in xml_content:
                 field_pos = xml_content.find(target_field)
                 
-                # 🎯 [핵심] 치환 필드가 위치한 직전의 <hp:p ...> 및 <hp:run ...> 속성 태그를 정확히 추출
+                # 🎯 필드 위치 바로 앞의 문단(<hp:p>) 및 글자(<hp:run>) 원본 스타일 태그 추출
                 p_matches = list(re.finditer(r'<hp:p\b[^>]*>', xml_content[:field_pos]))
                 open_p_tag = p_matches[-1].group(0) if p_matches else '<hp:p>'
                 
                 run_matches = list(re.finditer(r'<hp:run\b[^>]*>', xml_content[:field_pos]))
                 open_run_tag = run_matches[-1].group(0) if run_matches else '<hp:run>'
                 
-                # 엔터(\n) 발생 시 추출한 속성 태그(10pt / 맑은고딕 / 120%)를 그대로 주입하여 똑같은 스타일로 문단 생성
+                # 🎯 템플릿 원본 스타일(10pt 또는 9pt)을 변경 없이 그대로 사용하여 줄바꿈(\n) 처리
                 paragraph_replace = f'</hp:t></hp:run></hp:p>{open_p_tag}{open_run_tag}<hp:t>'
                 val_str = val_str.replace("\n", paragraph_replace)
                 
                 xml_content = xml_content.replace(target_field, val_str)
+
+        # 🎯 표 셀/행의 고정 높이(height) 속성을 제거하여 글자 수에 맞춰 높이가 유동적으로 조정되게 함
+        xml_content = re.sub(r'(<hp:tc\b[^>]*?)\s*height="\d+"([^>]*>)', r'\1\2', xml_content)
+        xml_content = re.sub(r'(<hp:tr\b[^>]*?)\s*height="\d+"([^>]*>)', r'\1\2', xml_content)
             
         # 🧹 메일머지 표시 태그 및 레이아웃 캐시 정돈
         xml_content = re.sub(r'<hp:ctrl><hp:fieldBegin.*?</hp:ctrl>', '', xml_content, flags=re.DOTALL)
