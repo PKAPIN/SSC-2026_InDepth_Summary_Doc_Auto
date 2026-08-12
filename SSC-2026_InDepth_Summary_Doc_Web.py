@@ -29,6 +29,31 @@ SHEET_ID = "1ws9JTAdRXwbp--NhrjWwelNorSTv1_LIJW7DijUtJLU"
 GID = "770556375"
 GOOGLE_SHEET_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={GID}"
 
+def format_text_to_hwpx_linebreaks(text_val):
+    """
+    \n 및 \n\n을 HWPX XML 문법 파괴 없이 hp:lineBreak를 활용하여 
+    안전하게 교체해주는 헬퍼 함수 (hp:p, hp:run 안 건드림)
+    """
+    if not text_val:
+        return ""
+    
+    # 윈도우/맥 줄바꿈 유형 통일
+    lines = str(text_val).replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    
+    xml_parts = []
+    for i, line in enumerate(lines):
+        # XML 특수문자 이스케이프
+        escaped_line = line.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        
+        # 줄바꿈 구분선 삽입 (첫 번째 줄이 아닌 경우에만 앞에 lineBreak 추가)
+        if i > 0:
+            xml_parts.append("<hp:lineBreak/>")
+        
+        xml_parts.append(f"<hp:t>{escaped_line}</hp:t>")
+        
+    return "".join(xml_parts)
+
+
 if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작", type="primary", use_container_width=True):
     
     hwpx_files = [f for f in glob.glob("*.hwpx") if not os.path.basename(f).startswith("~$")]
@@ -94,30 +119,12 @@ if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작
             elif isinstance(val, (pd.Timestamp, datetime.datetime)): val_str = val.strftime('%Y-%m-%d')
             elif isinstance(val, datetime.time): val_str = val.strftime('%H:%M')
             else: val_str = str(val).strip()
-                
-            # XML 특수문자 안전 이스케이프
-            val_str = val_str.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
             
-            # 💡 [핵심 - XML 파일 손상 없는 HWPX 표준 줄바꿈 정밀 복합 치환]
-            # 연속 줄바꿈(\n\n)과 단일 줄바꿈(\n)을 순차적으로 안정적인 문단 분리 구조로 안전 변환
-            val_str = val_str.replace("\r\n", "\n")
+            # 💡 [보수적 안전 방식] hp:p 문단을 건드리지 않고 hp:t + hp:lineBreak 로 안전 치환
+            hwpx_formatted_xml = format_text_to_hwpx_linebreaks(val_str)
             
-            # HWPX XML 문법에 안전한 줄바꿈 조합 처리
-            val_str = val_str.replace("\n\n", "</hp:t></hp:run></hp:p><hp:p><hp:run><hp:t>")
-            val_str = val_str.replace("\n", "</hp:t></hp:run></hp:p><hp:p><hp:run><hp:t>")
-            
-            xml_content = xml_content.replace(f"{{{{{col}}}}}", val_str)
-            
-        # 🧹 메일머지 및 필드 시작/끝 태그 완전 제거 (자동화 흔적 클린업)
-        xml_content = re.sub(r'<hp:ctrl><hp:fieldBegin.*?</hp:ctrl>', '', xml_content, flags=re.DOTALL)
-        xml_content = re.sub(r'<hp:ctrl><hp:fieldEnd.*.*?/hp:ctrl>', '', xml_content, flags=re.DOTALL)
-
-        # ↵ HWPX 옛날 줄바꿈 계산 캐시(linesegarray)를 삭제하여 한글이 실시간으로 줄바꿈을 재계산하도록 조치
-        xml_content = re.sub(r'<hp:linesegarray>.*?</hp:linesegarray>', '<hp:linesegarray/>', xml_content, flags=re.DOTALL)
-
-        # 🧹 치환 과정에서 생성될 수 있는 빈 문단 태그 및 쉼표 정돈
-        xml_content = re.sub(r'<hp:run><hp:t>\s*</hp:t></hp:run>', '', xml_content)
-        xml_content = re.sub(r'(<hp:t>\s*</hp:t>\s*<hp:t>\s*,\s*</hp:t>)+', '', xml_content)
+            # 기존 <hp:t>{{필드명}}</hp:t> 구조에서 {{필드명}} 치환
+            xml_content = xml_content.replace(f"{{{{{col}}}}}", hwpx_formatted_xml)
 
         doc_buffer = io.BytesIO()
         with zipfile.ZipFile(doc_buffer, 'w') as z_out:
