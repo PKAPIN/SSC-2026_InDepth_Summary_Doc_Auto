@@ -1,6 +1,6 @@
 # =========================================================================
 # [웹 호스팅용] 심층면담 회의록 및 점검 로그 자동 생성 Streamlit 웹 앱
-# - 회의록 1쪽 초과 방지: 문단 생성 시 줄간격 120% XML 강제 적용
+# - HWPX 1쪽 오버플로우 방지 (XML 구문 중복 오류 해결 및 120% 고정)
 # =========================================================================
 import io
 import os
@@ -14,7 +14,6 @@ import openpyxl
 from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
 import streamlit as st
 
-# Mac 및 클라우드 SSL 인증서 연결 오류 방지
 ssl._create_default_https_context = ssl._create_unverified_context
 
 st.set_page_config(page_title="심층면담 회의록 자동 생성 시스템", page_icon="📄", layout="wide")
@@ -85,15 +84,12 @@ if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작
         xml_content = template_files['Contents/section0.xml'].decode('utf-8')
         missing_fields = []
         
-        # ---------------------------------------------------------------------
-        # 💡 [글자수 자동 측정 및 120% / 160% 스위칭]
-        # ---------------------------------------------------------------------
         content_text = str(row.get('회의내용', '')) if pd.notna(row.get('회의내용', '')) else ""
         result_text = str(row.get('회의결과', '')) if pd.notna(row.get('회의결과', '')) else ""
         total_len = len(content_text) + len(result_text)
         
-        # 회의내용 + 회의결과 총합이 500자를 넘어가면 줄간격 120%로 강제 조율
-        target_line_spacing = "120" if total_len > 500 else "160"
+        # 글자수에 따라 120% / 160% 유동 설정 (기본 120%)
+        target_line_spacing = "120" if total_len > 450 else "160"
         
         for col in data_df.columns:
             if col == '일시_dt': continue
@@ -108,10 +104,10 @@ if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작
             # 특수문자 이스케이프 및 줄바꿈 정리
             val_str = val_str.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
             val_str = val_str.replace("\r\n", "\n").replace("\r", "\n")
-            val_str = val_str.replace("\n\n", "\n")  # 연속 이중 줄바꿈 단일화
+            val_str = val_str.replace("\n\n", "\n")
             
-            # 💡 [핵심] 줄바꿈(\n) 시 생성되는 새 문단(hp:p)마다 target_line_spacing 속성 강제 직접 주입!
-            paragraph_replace = f'</hp:t></hp:run></hp:p><hp:p lineSpacing="{target_line_spacing}" lineSpacingType="percent"><hp:run><hp:t>'
+            # 💡 [정리] 깨끗하게 단일 문단 태그로 치환
+            paragraph_replace = '</hp:t></hp:run></hp:p><hp:p><hp:run><hp:t>'
             val_str = val_str.replace("\n", paragraph_replace)
             
             xml_content = xml_content.replace(f"{{{{{col}}}}}", val_str)
@@ -122,7 +118,7 @@ if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작
         xml_content = re.sub(r'<hp:linesegarray>.*?</hp:linesegarray>', '<hp:linesegarray/>', xml_content, flags=re.DOTALL)
         xml_content = re.sub(r'(<hp:t>\s*</hp:t>\s*<hp:t>\s*,\s*</hp:t>)+', '', xml_content)
 
-        # 💡 section0.xml 및 header.xml 내 모든 lineSpacing 속성을 동적으로 변경
+        # 💡 [핵심] XML 속성 중 모든 lineSpacing 값을 단일화하여 지정된 타겟값으로 치환
         xml_content = re.sub(r'lineSpacing="\d+"', f'lineSpacing="{target_line_spacing}"', xml_content)
 
         header_xml_str = template_files.get('Contents/header.xml', b'').decode('utf-8')
@@ -162,7 +158,7 @@ if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작
         log_records.append(row_dict)
         
         progress_bar.progress(idx / total_rows)
-        progress_text.text(f"⚡ HWPX 회의록 자동 생성 중... [{idx}/{total_rows}] {doc_id}.hwpx (줄간격 {target_line_spacing}% 자동 적용)")
+        progress_text.text(f"⚡ HWPX 회의록 자동 생성 중... [{idx}/{total_rows}] {doc_id}.hwpx (줄간격 {target_line_spacing}% 적용)")
 
     log_df = pd.DataFrame(log_records)
     
