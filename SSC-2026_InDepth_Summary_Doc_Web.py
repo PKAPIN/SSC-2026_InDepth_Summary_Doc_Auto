@@ -98,19 +98,35 @@ if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작
             # 특수문자 이스케이프 및 줄바꿈 정리
             val_str = val_str.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
             val_str = val_str.replace("\r\n", "\n").replace("\r", "\n")
-            val_str = val_str.replace("\n\n", "\n")  # 불필요한 연속 공백 줄바꿈 단일화
+            val_str = val_str.replace("\n\n", "\n")
             
-            # 💡 [핵심 - 한글 표준 문단 치환]
-            # \n을 만났을 때 HWPX 표준 문단을 분리하여 확실한 엔터(줄바꿈) 적용
-            val_str = val_str.replace("\n", "</hp:t></hp:run></hp:p><hp:p><hp:run><hp:t>")
+            target_placeholder = f"{{{{{col}}}}}"
             
-            xml_content = xml_content.replace(f"{{{{{col}}}}}", val_str)
+            # 💡 [핵심 - 기존 문단의 속성(pPrIDRef, charPrIDRef)을 감지하여 120% 줄간격 유지 치환]
+            if target_placeholder in xml_content:
+                # 치환 대상 필드가 속한 <hp:p ...> 와 <hp:run ...> 태그의 속성을 추출
+                pattern = re.compile(r'(<hp:p[^>]*>)(.*?)(<hp:run[^>]*>)(.*?)\{\{' + re.escape(col) + r'\}\}(.*?)(</hp:run>)(.*?)(</hp:p>)', re.DOTALL)
+                match = pattern.search(xml_content)
+                
+                if match:
+                    p_start = match.group(1)      # 예: <hp:p pPrIDRef="2"> (줄간격 120% 속성이 담긴 부모 태그)
+                    run_start = match.group(3)    # 예: <hp:run charPrIDRef="1">
+                    
+                    # 새로운 문단이 생성될 때 템플릿 셀 본래의 pPrIDRef 및 charPrIDRef 속성을 그대로 계승
+                    split_delimiter = f"</hp:t></hp:run></hp:p>{p_start}{run_start}<hp:t>"
+                    formatted_val = val_str.replace("\n", split_delimiter)
+                    
+                    xml_content = xml_content.replace(target_placeholder, formatted_val)
+                else:
+                    # 일치하는 정밀 패턴이 없을 경우 기본 치환
+                    formatted_val = val_str.replace("\n", "</hp:t></hp:run></hp:p><hp:p><hp:run><hp:t>")
+                    xml_content = xml_content.replace(target_placeholder, formatted_val)
             
         # 🧹 메일머지 표시 태그 깔끔하게 정리
         xml_content = re.sub(r'<hp:ctrl><hp:fieldBegin.*?</hp:ctrl>', '', xml_content, flags=re.DOTALL)
         xml_content = re.sub(r'<hp:ctrl><hp:fieldEnd.*?</hp:ctrl>', '', xml_content, flags=re.DOTALL)
 
-        # ↵ HWPX 줄바꿈 계산 캐시(linesegarray) 삭제하여 한글 프로그램이 실시간으로 120% 줄간격 재계산하도록 유도
+        # ↵ HWPX 줄바꿈 계산 캐시(linesegarray) 삭제하여 한글이 실시간 재계산하도록 유도
         xml_content = re.sub(r'<hp:linesegarray>.*?</hp:linesegarray>', '<hp:linesegarray/>', xml_content, flags=re.DOTALL)
 
         # 🧹 빈 쉼표 정돈
