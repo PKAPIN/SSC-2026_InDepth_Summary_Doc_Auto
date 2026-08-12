@@ -88,7 +88,7 @@ if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작
         for col in data_df.columns:
             if col == '일시_dt': continue
             val = row[col]
-            if pd.isna(val) or str(val).strip() == "" or str(val).strip().lower() == "nan":
+            if pd.isna(val) or str(val).strip() == "" or str(str(val)).strip().lower() == "nan":
                 val_str = ""
                 if col in merge_fields: missing_fields.append(col)
             elif isinstance(val, (pd.Timestamp, datetime.datetime)): val_str = val.strftime('%Y-%m-%d')
@@ -98,38 +98,18 @@ if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작
             # 특수문자 이스케이프 및 줄바꿈 정리
             val_str = val_str.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
             val_str = val_str.replace("\r\n", "\n").replace("\r", "\n")
-            val_str = val_str.replace("\n\n", "\n")
+            val_str = val_str.replace("\n\n", "\n")  # 연속 이중 줄바꿈 단일화
             
-            target_placeholder = f"{{{{{col}}}}}"
+            # 💡 [핵심] HWPX 표 셀 내부 문단 단위 엔터(줄바꿈) 치환 구문
+            val_str = val_str.replace("\n", "</hp:t></hp:run></hp:p><hp:p><hp:run><hp:t>")
             
-            if target_placeholder in xml_content:
-                # 💡 [핵심 - 글자 크기 튀는 문제 완전 해결]
-                # {{필드명}} 바로 앞의 <hp:p ...> 와 <hp:run ...> 속성을 정확히 찾아내어 동일 스타일 계승
-                p_tag_match = re.search(r'<hp:p\b[^>]*>', xml_content[:xml_content.find(target_placeholder)][::-1][::-1])
-                run_tag_match = re.search(r'<hp:run\b[^>]*>', xml_content[:xml_content.find(target_placeholder)][::-1][::-1])
-                
-                # 안전하게 바로 앞의 태그 수집 (실패 시 기본 문단 교체)
-                placeholder_pos = xml_content.find(target_placeholder)
-                before_xml = xml_content[:placeholder_pos]
-                
-                last_p = re.findall(r'<hp:p\b[^>]*>', before_xml)
-                last_run = re.findall(r'<hp:run\b[^>]*>', before_xml)
-                
-                if last_p and last_run:
-                    p_start = last_p[-1]       # 바로 직전의 정상 문단 속성 (글자크기/줄간격)
-                    run_start = last_run[-1]   # 바로 직전의 정상 폰트 속성
-                    split_delimiter = f"</hp:t></hp:run></hp:p>{p_start}{run_start}<hp:t>"
-                    formatted_val = val_str.replace("\n", split_delimiter)
-                else:
-                    formatted_val = val_str.replace("\n", "</hp:t></hp:run></hp:p><hp:p><hp:run><hp:t>")
-                
-                xml_content = xml_content.replace(target_placeholder, formatted_val)
+            xml_content = xml_content.replace(f"{{{{{col}}}}}", val_str)
             
-        # 🧹 메일머지 표시 태그 정리
+        # 🧹 메일머지 표시 태그 깔끔하게 정리
         xml_content = re.sub(r'<hp:ctrl><hp:fieldBegin.*?</hp:ctrl>', '', xml_content, flags=re.DOTALL)
         xml_content = re.sub(r'<hp:ctrl><hp:fieldEnd.*?</hp:ctrl>', '', xml_content, flags=re.DOTALL)
 
-        # ↵ HWPX 줄바꿈 계산 캐시(linesegarray) 삭제
+        # ↵ HWPX 옛날 줄바꿈 계산 캐시(linesegarray) 삭제
         xml_content = re.sub(r'<hp:linesegarray>.*?</hp:linesegarray>', '<hp:linesegarray/>', xml_content, flags=re.DOTALL)
 
         # 🧹 빈 쉼표 정돈
@@ -159,7 +139,7 @@ if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작
         log_records.append(row_dict)
         
         progress_bar.progress(idx / total_rows)
-        progress_text.text(f"⚡ HWPX 회의록 생성 중... [{idx}/{total_rows}] {doc_id}.hwpx")
+        progress_text.text(f"⚡ HWPX 회의록 자동 생성 중... [{idx}/{total_rows}] {doc_id}.hwpx")
 
     log_df = pd.DataFrame(log_records)
     
