@@ -2,9 +2,8 @@
 # [웹 호스팅용] 심층면담 회의록 및 점검 로그 자동 생성 Streamlit 웹 앱
 # - 회의내용/회의결과 상호 공간 재배분(유동 높이 흡수) 최적화판
 # - 1페이지 표 틀 및 하단 로고 위치 완전 고정
-# - 백그라운드 비동기 멀티스레딩 적용 (15% 대기 멈춤 및 Read timed out 완벽 해결)
-# - timeout=600(10분) 설정으로 대량 문서 업데이트 타임아웃 방지
-# - 구글 앱스크립트(GS) 실행 과정 실시간 4단계 동기화 메시지 롤링 디스플레이
+# - 백그라운드 비동기 멀티스레딩 적용
+# - timeout=600(10분) 설정 및 응답 초과 시 재시도 안내 예외 처리
 # =========================================================================
 import io
 import os
@@ -63,7 +62,7 @@ with col_top_btn:
     update_clicked = st.button("🔄 자료 업데이트", key="btn_update_data", use_container_width=True)
     st.caption("구글 드라이브에 업로드된 문서내용을 스프레드 시트로 불러옵니다.")
 
-# 자료 업데이트 버튼 클릭 시 비동기 스레드(timeout 600s) + 실시간 4단계 동기화 실행 로그 디스플레이
+# 자료 업데이트 버튼 클릭 시 비동기 스레드 + 예외 문구 처리
 if update_clicked:
     st.write("🚀 **구글 드라이브 심층면담 기록지를 읽어 구글 시트(DB)에 AI 요약을 기입 중입니다...**")
     st.caption("💡 업데이트 분량이 많으면 1~2분 정도의 시간이 소요될 수 있습니다.")
@@ -73,7 +72,6 @@ if update_clicked:
     
     api_result = {"response": None, "error": None, "done": False}
     
-    # 백그라운드 앱스크립트 비동기 호출 함수 (timeout=600으로 타임아웃 방지)
     def fetch_apps_script():
         try:
             res = requests.get(APPS_SCRIPT_WEBAPP_URL, allow_redirects=True, timeout=600)
@@ -89,7 +87,6 @@ if update_clicked:
     start_time = time.time()
     current_pct = 0
     
-    # 백엔드 완료 시점까지 UI 메인 스레드에서 실시간 진행 상태와 4단계 로그 메시지 롤링
     while not api_result["done"]:
         time.sleep(0.8)
         elapsed = int(time.time() - start_time)
@@ -99,7 +96,6 @@ if update_clicked:
             
         ai_progress_bar.progress(current_pct)
         
-        # 앱스크립트 진행 단계별 메시지 정의
         if current_pct < 20:
             stage_msg = "🔍 [1/4단계] 구글 드라이브 내 심층면담 기록지 파일 탐색 및 HWP/HWPX 구조 진단 중..."
         elif current_pct < 45:
@@ -115,22 +111,29 @@ if update_clicked:
     error = api_result["error"]
     
     if response and response.status_code == 200:
-        ai_progress_bar.progress(100)
-        ai_status_text.success("✅ 구글 드라이브의 문서 내용이 구글 시트(DB)로 성공적으로 자동 요약되어 동기화되었습니다! (100% 완료)")
-        st.session_state.clear()
+        res_text = response.text.strip()
         
-        try:
-            res_json = response.json()
-            gs_result_msg = res_json.get("result", "상세 로그를 불러올 수 없습니다.")
-            st.session_state['gs_update_log'] = gs_result_msg
-        except Exception:
-            st.session_state['gs_update_log'] = response.text
+        # HTML 코드가 반환되었을 경우 타임아웃 예외 문구 처리
+        if res_text.startswith("<!DOCTYPE html>") or "<html" in res_text.lower():
+            ai_progress_bar.progress(100)
+            ai_status_text.warning("⚠️ 응답 시간이 초과되었습니다. 처리 중인 남은 항목 작성을 위해 [🔄 자료 업데이트] 버튼을 한 번 더 눌러 시도해 주세요.")
+            st.session_state['gs_update_log'] = "⚠️ 구글 서버 응답 시간 초과(6분 제한)로 일시 중단되었습니다.\n구글 시트(DB)에는 현재까지 작성된 데이터가 저장되어 있으니, 남은 항목 완결을 위해 [🔄 자료 업데이트] 버튼을 한 번 더 눌러주세요."
+        else:
+            ai_progress_bar.progress(100)
+            ai_status_text.success("✅ 구글 드라이브의 문서 내용이 구글 시트(DB)로 성공적으로 자동 요약되어 동기화되었습니다! (100% 완료)")
+            st.session_state.clear()
             
+            try:
+                res_json = response.json()
+                gs_result_msg = res_json.get("result", res_text)
+                st.session_state['gs_update_log'] = gs_result_msg
+            except Exception:
+                st.session_state['gs_update_log'] = res_text
     else:
         status_err = response.status_code if response else f"오류 발생: {error}"
         st.error(f"❌ 앱스크립트 동기화 호출 실패 ({status_err})")
 
-# 구글 앱스크립트 업데이트 상세 결과 로그 박스 (로그 내 우측 하단 버전 표기 포함)
+# 구글 앱스크립트 업데이트 상세 결과 로그 박스
 if 'gs_update_log' in st.session_state:
     with st.expander("📋 업데이트 상세 로그 보기", expanded=True):
         st.code(st.session_state['gs_update_log'], language="text")
