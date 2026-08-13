@@ -1,6 +1,8 @@
 # =========================================================================
 # [웹 호스팅용] 심층면담 회의록 및 점검 로그 자동 생성 Streamlit 웹 앱
-# - Apps Script 웹 앱 URL 실제 호출 연동판 (구글 시트 DB 자동 기입 수행)
+# - 회의내용/회의결과 상호 공간 재배분(유동 높이 흡수) 최적화판
+# - 1페이지 표 틀 및 하단 로고 위치 완전 고정
+# - Apps Script 웹 앱 URL 실제 연동 완료 및 실시간 캐시 무효화 적용
 # =========================================================================
 import io
 import os
@@ -10,7 +12,7 @@ import datetime
 import re
 import ssl
 import time
-import requests  # 구글 앱스크립트 호출용
+import requests
 import pandas as pd
 import openpyxl
 from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
@@ -21,13 +23,11 @@ ssl._create_default_https_context = ssl._create_unverified_context
 st.set_page_config(page_title="심층면담 회의록 자동 생성 시스템", page_icon="📄", layout="wide")
 
 # -------------------------------------------------------------------------
-# ★ [핵심 설정] 구글 앱스크립트(Apps Script) 새 배포 후 받은 웹 앱 URL 입력
+# ★ [발급받으신 웹 앱 URL 반영 완료]
 # -------------------------------------------------------------------------
-APPS_SCRIPT_WEBAPP_URL = "https://script.google.com/macros/s/AKfycb.../exec" # 여기에 배포된 URL 입력
+APPS_SCRIPT_WEBAPP_URL = "https://script.google.com/macros/s/AKfycbzRGrTOm0FEdrckyZ7d1YBVmIIouj-7WrEDQxQ-fJPnHLGJyu2L7Vp_KxC-SvNqx5rq/exec"
 
-# -------------------------------------------------------------------------
-# [초록색 버튼 커스텀 CSS]
-# -------------------------------------------------------------------------
+# 초록색 버튼 지정 커스텀 CSS
 st.markdown("""
     <style>
     div.stButton > button[key="btn_update_data"] {
@@ -45,7 +45,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # -------------------------------------------------------------------------
-# [1] 상단 레이아웃 (좌측: 타이틀 및 설명 / 우측 상단: 초록색 자료 업데이트 버튼)
+# [1] 상단 레이아웃 (좌측: 타이틀 / 우측 상단: 초록색 버튼 및 상시 안내 박스)
 # -------------------------------------------------------------------------
 col_title, col_top_btn = st.columns([3, 1.3])
 
@@ -55,48 +55,35 @@ with col_title:
     st.caption("구글 시트의 최신 데이터를 실시간으로 읽어와 지정된 HWPX 회의록 서식으로 개별 문서 및 점검 로그(Excel/CSV)를 일괄 생성합니다.")
 
 with col_top_btn:
-    st.write(" ") 
+    st.write(" ")
     st.info("💡 **안내**: 심층면담 기록지가 추가로 들어왔을 경우 아래 버튼을 통해 업데이트를 할 수 있습니다. 다운로드 전 업데이트 부탁드립니다.")
     update_clicked = st.button("🔄 자료 업데이트", key="btn_update_data", use_container_width=True)
     st.caption("구글 드라이브에 업로드된 문서내용을 스프레드 시트로 불러옵니다.")
 
-# -------------------------------------------------------------------------
-# [2] 자료 업데이트 버튼 클릭 시 구글 앱스크립트 실제 실행 및 DB 기입
-# -------------------------------------------------------------------------
+# 자료 업데이트 버튼 클릭 시 구글 앱스크립트 실제 호출 및 DB 연동
 if update_clicked:
-    if "YOUR_WEBAPP_URL" in APPS_SCRIPT_WEBAPP_URL or not APPS_SCRIPT_WEBAPP_URL.startswith("http"):
-        st.error("⚠️ APPS_SCRIPT_WEBAPP_URL 설정이 필요합니다. 구글 앱스크립트 배포 URL을 파이썬 코드 상단에 붙여넣어 주세요.")
-    else:
-        st.write("🚀 **구글 드라이브 심층면담 기록지를 읽어 구글 시트(DB)에 AI 요약을 기입 중입니다...**")
+    st.write("🚀 **구글 드라이브 심층면담 기록지를 읽어 구글 시트(DB)에 AI 요약을 기입 중입니다...**")
+    ai_progress_bar = st.progress(10)
+    ai_status_text = st.empty()
+    ai_status_text.text("⏳ 구글 앱스크립트 AI 요약 로직을 실행하는 중...")
+    
+    try:
+        response = requests.get(APPS_SCRIPT_WEBAPP_URL, timeout=300)
+        ai_progress_bar.progress(90)
         
-        ai_progress_bar = st.progress(0)
-        ai_status_text = st.empty()
-        
-        try:
-            # 1. 진행 상태 표시 시뮬레이션 시작
-            ai_progress_bar.progress(10)
-            ai_status_text.text("⏳ 구글 앱스크립트 AI 요약 로직을 실행하는 중...")
-            
-            # 2. 구글 앱스크립트(Web App) 실제로 호출하여 실행 (processInterviewFilesToSheet 동작)
-            response = requests.get(APPS_SCRIPT_WEBAPP_URL, timeout=300) # 최대 5분 대기
-            
-            ai_progress_bar.progress(90)
-            
-            if response.status_code == 200:
-                ai_progress_bar.progress(100)
-                ai_status_text.success("✅ 구글 드라이브의 문서 내용이 구글 시트(DB)로 성공적으로 자동 요약되어 업데이트되었습니다!")
-                
-                # 시트 데이터 재로드를 위해 기존 Streamlit 캐시 비우기
-                st.session_state.clear()
-            else:
-                st.error(f"❌ 앱스크립트 호출 실패 (HTTP 코드: {response.status_code})")
-        except Exception as e:
-            st.error(f"🚨 업데이트 처리 중 오류 발생: {e}")
+        if response.status_code == 200:
+            ai_progress_bar.progress(100)
+            ai_status_text.success("✅ 구글 드라이브의 문서 내용이 구글 시트(DB)로 성공적으로 자동 요약되어 업데이트되었습니다!")
+            st.session_state.clear() # 이전 캐시 초기화
+        else:
+            st.error(f"❌ 앱스크립트 호출 실패 (HTTP 코드: {response.status_code})")
+    except Exception as e:
+        st.error(f"🚨 업데이트 처리 중 오류 발생: {e}")
 
 st.divider()
 
 # -------------------------------------------------------------------------
-# [3] 소주제 헤더 볼드 처리 및 앞줄 공백(\n\n) 자동 포맷팅 함수
+# [2] 소주제 헤더 볼드 처리 및 앞줄 공백(\n\n) 자동 포맷팅 함수
 # -------------------------------------------------------------------------
 def format_section_headers(text: str) -> str:
     if not text or not isinstance(text, str):
@@ -114,8 +101,6 @@ def format_section_headers(text: str) -> str:
 
 SHEET_ID = "1ws9JTAdRXwbp--NhrjWwelNorSTv1_LIJW7DijUtJLU"
 GID = "770556375"
-# 캐시 방지를 위한 타임스탬프 파라미터 추가
-GOOGLE_SHEET_URL = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={GID}&_nocache={int(time.time())}"
 
 if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작", type="primary", use_container_width=True):
     
@@ -130,9 +115,9 @@ if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작
 
     with st.spinner("🔄 구글 시트에서 최신 데이터를 불러오는 중..."):
         try:
-            # 타임스탬프 파라미터로 항상 최신 CSV 데이터 수집
-            current_sheet_url = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={GID}&_nocache={int(time.time())}"
-            df_raw = pd.read_csv(current_sheet_url)
+            # 타임스탬프 파라미터로 구글 내보내기 CSV 캐시 강제 무효화
+            nocache_url = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={GID}&_nocache={int(time.time())}"
+            df_raw = pd.read_csv(nocache_url)
             data_df = df_raw.iloc[2:].dropna(subset=['문서ID']).copy()
         except Exception as e:
             st.error(f"❌ 구글 시트 데이터를 읽어오는 중 오류가 발생했습니다: {e}")
