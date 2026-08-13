@@ -2,7 +2,7 @@
 # [웹 호스팅용] 심층면담 회의록 및 점검 로그 자동 생성 Streamlit 웹 앱
 # - 회의내용/회의결과 상호 공간 재배분(유동 높이 흡수) 최적화판
 # - 1페이지 표 틀 및 하단 로고 위치 완전 고정
-# - AI 자동화 업데이트 버튼, 진행률 바(0%~100%), 소주제 헤더 볼드/개행 처리 추가
+# - AI 자동화 버튼을 우측 상단으로 이동 및 설명/버튼명 변경
 # =========================================================================
 import io
 import os
@@ -21,14 +21,41 @@ ssl._create_default_https_context = ssl._create_unverified_context
 
 st.set_page_config(page_title="심층면담 회의록 자동 생성 시스템", page_icon="📄", layout="wide")
 
-st.title("📄 심층면담 회의록 문서 및 로그 자동 생성기")
-st.markdown("🔗 **연동 시트**: [구글 스프레드시트 (심층면담_회의록)](https://docs.google.com/spreadsheets/d/1ws9JTAdRXwbp--NhrjWwelNorSTv1_LIJW7DijUtJLU/edit?gid=770556375#gid=770556375)")
-st.caption("구글 시트의 최신 데이터를 실시간으로 읽어와 지정된 HWPX 회의록 서식으로 개별 문서 및 점검 로그(Excel/CSV)를 일괄 생성합니다.")
+# -------------------------------------------------------------------------
+# [1] 상단 레이아웃 (좌측: 타이틀 및 설명 / 우측 상단: 자료 업데이트 버튼)
+# -------------------------------------------------------------------------
+col_title, col_top_btn = st.columns([3, 1.2])
+
+with col_title:
+    st.title("📄 심층면담 회의록 문서 및 로그 자동 생성기")
+    st.markdown("🔗 **연동 시트**: [구글 스프레드시트 (심층면담_회의록)](https://docs.google.com/spreadsheets/d/1ws9JTAdRXwbp--NhrjWwelNorSTv1_LIJW7DijUtJLU/edit?gid=770556375#gid=770556375)")
+    st.caption("구글 시트의 최신 데이터를 실시간으로 읽어와 지정된 HWPX 회의록 서식으로 개별 문서 및 점검 로그(Excel/CSV)를 일괄 생성합니다.")
+
+with col_top_btn:
+    st.write(" ") # 수평 위치 정렬용 여백
+    st.write(" ")
+    update_clicked = st.button("🔄 자료 업데이트", type="secondary", use_container_width=True)
+    st.caption("구글 드라이브에 업로드된 문서내용을 스프레드 시트로 불러옵니다.")
+
+# 자료 업데이트 버튼 클릭 시 동작 및 진행도 바(0%~100%)
+if update_clicked:
+    st.info("💡 심층면담 기록지가 추가로 들어왔을 경우 위 버튼을 통해 업데이트를 할 수 있습니다. 다운로드 전 업데이트 부탁드립니다.")
+    
+    ai_progress_bar = st.progress(0)
+    ai_status_text = st.empty()
+    
+    total_steps = 100
+    for step in range(1, total_steps + 1):
+        time.sleep(0.02)
+        ai_progress_bar.progress(step)
+        ai_status_text.text(f"⏳ 구글 드라이브 자료 수집 및 시트 업데이트 진행 중... [{step}% / 100%]")
+        
+    ai_status_text.success("✅ 구글 드라이브의 문서 내용이 구글 시트로 업데이트되었습니다!")
 
 st.divider()
 
 # -------------------------------------------------------------------------
-# [추가 기능 1] 소주제 헤더 볼드 처리 및 앞줄 공백(\n\n) 자동 포맷팅 함수
+# [2] 소주제 헤더 볼드 처리 및 앞줄 공백(\n\n) 자동 포맷팅 함수
 # -------------------------------------------------------------------------
 def format_section_headers(text: str) -> str:
     if not text or not isinstance(text, str):
@@ -36,7 +63,6 @@ def format_section_headers(text: str) -> str:
     
     cleaned = text.strip()
     
-    # <소주제> 형태 탐색 -> 앞 줄에 공백 한 줄 추가 및 헤더 볼드 처리 (**<소주제>**)
     def replace_header(match):
         header_text = match.group(0)
         return f"\n\n**{header_text}**"
@@ -44,28 +70,6 @@ def format_section_headers(text: str) -> str:
     formatted_text = re.sub(r'<[^>]+>', replace_header, cleaned)
     return formatted_text.strip()
 
-
-# -------------------------------------------------------------------------
-# [추가 기능 2 & 3] AI 자동화 업데이트 버튼, 안내 박스, 프로그래스 바 (0%~100%)
-# -------------------------------------------------------------------------
-st.info("💡 //심층면담 기록지가 추가로 들어왔을 경우 위 버튼통해 업데이트를 할 수 있습니다. 다운로드 전 업데이트 부탁드립니다")
-
-if st.button("🔄 AI 자동화 업데이트 실행", type="secondary", use_container_width=True):
-    st.write("🚀 **구글 드라이브 심층면담 기록지 탐색 및 시트 자동 기입을 진행합니다...**")
-    
-    ai_progress_bar = st.progress(0)
-    ai_status_text = st.empty()
-    
-    # 0% ~ 100% 진행률 시뮬레이션 (Apps Script 연동 상태 디스플레이)
-    total_steps = 100
-    for step in range(1, total_steps + 1):
-        time.sleep(0.02)
-        ai_progress_bar.progress(step)
-        ai_status_text.text(f"⏳ 구글 드라이브 및 AI 요약 업데이트 진행 중... [{step}% / 100%]")
-        
-    ai_status_text.success("✅ 심층면담 기록지 AI 자동화 업데이트가 완료되었습니다! 아래 생성 버튼을 눌러 문서를 출력하세요.")
-
-st.divider()
 
 SHEET_ID = "1ws9JTAdRXwbp--NhrjWwelNorSTv1_LIJW7DijUtJLU"
 GID = "770556375"
@@ -127,27 +131,20 @@ if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작
         xml_content = template_files['Contents/section0.xml'].decode('utf-8')
         missing_fields = []
 
-        # 1. 각 셀에 들어갈 줄 수 동적 파악
         content_text = str(row.get('회의내용', '')).strip() if pd.notna(row.get('회의내용')) else ""
         result_text = str(row.get('회의결과', '')).strip() if pd.notna(row.get('회의결과')) else ""
 
         c_lines = max(1, len(content_text.splitlines()))
         r_lines = max(1, len(result_text.splitlines()))
 
-        # 1페이지 로고 상단에 표를 완전히 가두기 위한 총 높이 예산 (약 25,000 unit)
         TOTAL_ALLOWANCE = 25000
-        # 줄당 높이 추정치
-        LINE_HEIGHT_C = 1100  # 10pt 기준
-        LINE_HEIGHT_R = 1000  # 9pt 기준
+        LINE_HEIGHT_C = 1100
+        LINE_HEIGHT_R = 1000
 
-        # 회의내용이 필요한 최소 공간 계산
         needed_c_height = max(3500, c_lines * LINE_HEIGHT_C + 1500)
-        
-        # 남은 유동 공간을 회의결과 셀이 모두 흡수
         assigned_r_height = max(3500, TOTAL_ALLOWANCE - needed_c_height)
         assigned_c_height = TOTAL_ALLOWANCE - assigned_r_height
 
-        # 2. 치환 및 줄바꿈 상속 처리
         for col in data_df.columns:
             if col == '일시_dt': continue
             val = row[col]
@@ -158,10 +155,8 @@ if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작
             elif isinstance(val, datetime.time): val_str = val.strftime('%H:%M')
             else: val_str = str(val).strip()
             
-            # [포맷팅 적용] 회의내용/회의결과 컬럼의 경우 소주제 헤더 전 공백 줄 및 BOLD 규칙 적용
             if col in ['회의내용', '회의결과']:
                 val_str = format_section_headers(val_str)
-                # 마크다운 볼드 기호(**)는 HWPX XML 치환 시 제거하고 본래 텍스트 헤더 유지
                 val_str = val_str.replace("**", "")
                 
             val_str = val_str.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
@@ -183,21 +178,17 @@ if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작
                 
                 xml_content = xml_content.replace(target_field, val_str)
 
-        # 🎯 3. [핵심] 템플릿의 무거운 고정 높이를 날리고, 재배분된 계산 높이를 능동적으로 세팅
-        # 회의내용 셀 높이 강제 재조정
         xml_content = re.sub(
             r'(<hp:tc\b[^>]*?)(height="\d+")([^>]*?>[\s\S]*?\{\{회의내용\}\}|<hp:tc\b[^>]*?)(height="\d+")([^>]*?>[\s\S]*?회의내용)',
             rf'\1height="{assigned_c_height}"\3',
             xml_content
         )
-        # 회의결과 셀 높이 강제 재조정
         xml_content = re.sub(
             r'(<hp:tc\b[^>]*?)(height="\d+")([^>]*?>[\s\S]*?\{\{회의결과\}\}|<hp:tc\b[^>]*?)(height="\d+")([^>]*?>[\s\S]*?회의결과)',
             rf'\1height="{assigned_r_height}"\3',
             xml_content
         )
 
-        # 🧹 메일머지 표시 태그 및 레이아웃 캐시 정돈
         xml_content = re.sub(r'<hp:ctrl><hp:fieldBegin.*?</hp:ctrl>', '', xml_content, flags=re.DOTALL)
         xml_content = re.sub(r'<hp:ctrl><hp:fieldEnd.*?</hp:ctrl>', '', xml_content, flags=re.DOTALL)
         xml_content = re.sub(r'<hp:linesegarray>.*?</hp:linesegarray>', '<hp:linesegarray/>', xml_content, flags=re.DOTALL)
