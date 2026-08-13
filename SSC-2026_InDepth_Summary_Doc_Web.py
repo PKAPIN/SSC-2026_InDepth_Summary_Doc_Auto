@@ -2,7 +2,7 @@
 # [웹 호스팅용] 심층면담 회의록 및 점검 로그 자동 생성 Streamlit 웹 앱
 # - 회의내용/회의결과 상호 공간 재배분(유동 높이 흡수) 최적화판
 # - 1페이지 표 틀 및 하단 로고 위치 완전 고정
-# - Apps Script 웹 앱 URL 실제 연동 완료 및 실시간 캐시 무효화 적용
+# - AI 자동화 진행률(% 표시) 및 Apps Script 상세 결과 로그 보기(st.expander) 추가
 # =========================================================================
 import io
 import os
@@ -12,6 +12,7 @@ import datetime
 import re
 import ssl
 import time
+import json
 import requests
 import pandas as pd
 import openpyxl
@@ -23,7 +24,7 @@ ssl._create_default_https_context = ssl._create_unverified_context
 st.set_page_config(page_title="심층면담 회의록 자동 생성 시스템", page_icon="📄", layout="wide")
 
 # -------------------------------------------------------------------------
-# ★ [발급받으신 웹 앱 URL 반영 완료]
+# ★ [Apps Script 웹 앱 URL]
 # -------------------------------------------------------------------------
 APPS_SCRIPT_WEBAPP_URL = "https://script.google.com/macros/s/AKfycbzRGrTOm0FEdrckyZ7d1YBVmIIouj-7WrEDQxQ-fJPnHLGJyu2L7Vp_KxC-SvNqx5rq/exec"
 
@@ -60,25 +61,56 @@ with col_top_btn:
     update_clicked = st.button("🔄 자료 업데이트", key="btn_update_data", use_container_width=True)
     st.caption("구글 드라이브에 업로드된 문서내용을 스프레드 시트로 불러옵니다.")
 
-# 자료 업데이트 버튼 클릭 시 구글 앱스크립트 실제 호출 및 DB 연동
+# 자료 업데이트 버튼 클릭 시 시각적 진행도(% 및 GS로그 수신) 출력
 if update_clicked:
     st.write("🚀 **구글 드라이브 심층면담 기록지를 읽어 구글 시트(DB)에 AI 요약을 기입 중입니다...**")
-    ai_progress_bar = st.progress(10)
+    st.caption("💡 업데이트 분량이 많으면 1~2분 정도의 시간이 소요될 수 있습니다.")
+    
+    ai_progress_bar = st.progress(0)
     ai_status_text = st.empty()
-    ai_status_text.text("⏳ 구글 앱스크립트 AI 요약 로직을 실행하는 중...")
+    
+    total_est_seconds = 90
+    start_time = time.time()
     
     try:
-        response = requests.get(APPS_SCRIPT_WEBAPP_URL, timeout=300)
-        ai_progress_bar.progress(90)
+        ai_status_text.text("⏳ 구글 드라이브 문서 파싱 및 Gemini AI 요약 진행 중... [0%]")
+        response = None
         
-        if response.status_code == 200:
+        for pct in range(1, 100):
+            time.sleep(0.08)
+            ai_progress_bar.progress(pct)
+            
+            elapsed = int(time.time() - start_time)
+            ai_status_text.text(f"⏳ 구글 앱스크립트 AI 요약 진행 중... [{pct}% / 100%] (경과 시간: {elapsed}초)")
+            
+            # 15% 시점에 실제 백엔드 API 호출 실행
+            if pct == 15 and response is None:
+                response = requests.get(APPS_SCRIPT_WEBAPP_URL, timeout=300)
+                
+        if response and response.status_code == 200:
             ai_progress_bar.progress(100)
-            ai_status_text.success("✅ 구글 드라이브의 문서 내용이 구글 시트(DB)로 성공적으로 자동 요약되어 업데이트되었습니다!")
-            st.session_state.clear() # 이전 캐시 초기화
+            ai_status_text.success("✅ 구글 드라이브의 문서 내용이 구글 시트(DB)로 성공적으로 자동 요약되어 업데이트되었습니다! (100% 완료)")
+            st.session_state.clear()
+            
+            # Apps Script가 리턴한 결과 JSON 파싱 및 로그 저장
+            try:
+                res_json = response.json()
+                gs_result_msg = res_json.get("result", "상세 로그를 불러올 수 없습니다.")
+                st.session_state['gs_update_log'] = gs_result_msg
+            except Exception:
+                st.session_state['gs_update_log'] = response.text
+                
         else:
-            st.error(f"❌ 앱스크립트 호출 실패 (HTTP 코드: {response.status_code})")
+            status = response.status_code if response else "Unknown"
+            st.error(f"❌ 앱스크립트 호출 실패 (HTTP 코드: {status})")
+            
     except Exception as e:
         st.error(f"🚨 업데이트 처리 중 오류 발생: {e}")
+
+# 구글 앱스크립트 업데이트 상세 로그 출력 (GS 코드의 ui.alert 메시지와 동일)
+if 'gs_update_log' in st.session_state:
+    with st.expander("📋 업데이트 상세 로그 보기 (파일 개수, HWPX/HWP 구분, 오류 항목)", expanded=True):
+        st.code(st.session_state['gs_update_log'], language="text")
 
 st.divider()
 
@@ -115,7 +147,6 @@ if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작
 
     with st.spinner("🔄 구글 시트에서 최신 데이터를 불러오는 중..."):
         try:
-            # 타임스탬프 파라미터로 구글 내보내기 CSV 캐시 강제 무효화
             nocache_url = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={GID}&_nocache={int(time.time())}"
             df_raw = pd.read_csv(nocache_url)
             data_df = df_raw.iloc[2:].dropna(subset=['문서ID']).copy()
