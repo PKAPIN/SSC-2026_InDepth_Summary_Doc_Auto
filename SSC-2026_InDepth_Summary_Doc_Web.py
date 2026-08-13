@@ -85,7 +85,7 @@ if update_clicked:
             
             # 15% 진입 시점에 실제 앱스크립트 API 호출 실행
             if pct == 15 and response is None:
-                response = requests.get(APPS_SCRIPT_WEBAPP_URL, timeout=300)
+                response = requests.get(APPS_SCRIPT_WEBAPP_URL, timeout=600)
                 
         if response and response.status_code == 200:
             ai_progress_bar.progress(100)
