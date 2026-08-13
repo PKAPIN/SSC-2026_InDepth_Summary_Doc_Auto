@@ -2,7 +2,7 @@
 # [웹 호스팅용] 심층면담 회의록 및 점검 로그 자동 생성 Streamlit 웹 앱
 # - 회의내용/회의결과 상호 공간 재배분(유동 높이 흡수) 최적화판
 # - 1페이지 표 틀 및 하단 로고 위치 완전 고정
-# - AI 자동화 버튼을 우측 상단으로 이동 및 설명/버튼명 변경
+# - 자료 업데이트 버튼 우측 상단 배치, 초록색 스타일링 적용, 안내박스 상시 노출
 # =========================================================================
 import io
 import os
@@ -22,9 +22,29 @@ ssl._create_default_https_context = ssl._create_unverified_context
 st.set_page_config(page_title="심층면담 회의록 자동 생성 시스템", page_icon="📄", layout="wide")
 
 # -------------------------------------------------------------------------
-# [1] 상단 레이아웃 (좌측: 타이틀 및 설명 / 우측 상단: 자료 업데이트 버튼)
+# [초록색 버튼 지정을 위한 Custom CSS]
 # -------------------------------------------------------------------------
-col_title, col_top_btn = st.columns([3, 1.2])
+st.markdown("""
+    <style>
+    /* 초록색 전용 커스텀 버튼 스타일 */
+    div.stButton > button[key="btn_update_data"] {
+        background-color: #28a745 !important;
+        color: white !important;
+        border-color: #28a745 !important;
+        font-weight: bold !important;
+    }
+    div.stButton > button[key="btn_update_data"]:hover {
+        background-color: #218838 !important;
+        border-color: #1e7e34 !important;
+        color: white !important;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
+# -------------------------------------------------------------------------
+# [1] 상단 레이아웃 (좌측: 타이틀 및 설명 / 우측 상단: 초록색 자료 업데이트 버튼)
+# -------------------------------------------------------------------------
+col_title, col_top_btn = st.columns([3, 1.3])
 
 with col_title:
     st.title("📄 심층면담 회의록 문서 및 로그 자동 생성기")
@@ -33,14 +53,15 @@ with col_title:
 
 with col_top_btn:
     st.write(" ") # 수평 위치 정렬용 여백
-    st.write(" ")
-    update_clicked = st.button("🔄 자료 업데이트", type="secondary", use_container_width=True)
+    # 1. 파란색 안내 박스를 클릭 전에 항상 보이도록 상단에 먼저 배치
+    st.info("💡 **안내**: 심층면담 기록지가 추가로 들어왔을 경우 아래 버튼을 통해 업데이트를 할 수 있습니다. 다운로드 전 업데이트 부탁드립니다.")
+    
+    # 2. 초록색 스타일이 적용된 자료 업데이트 버튼
+    update_clicked = st.button("🔄 자료 업데이트", key="btn_update_data", use_container_width=True)
     st.caption("구글 드라이브에 업로드된 문서내용을 스프레드 시트로 불러옵니다.")
 
-# 자료 업데이트 버튼 클릭 시 동작 및 진행도 바(0%~100%)
+# 자료 업데이트 버튼 클릭 시 진행도 바(0%~100%) 동작
 if update_clicked:
-    st.info("💡 심층면담 기록지가 추가로 들어왔을 경우 위 버튼을 통해 업데이트를 할 수 있습니다. 다운로드 전 업데이트 부탁드립니다.")
-    
     ai_progress_bar = st.progress(0)
     ai_status_text = st.empty()
     
