@@ -2,8 +2,8 @@
 # [웹 호스팅용] 심층면담 회의록 및 점검 로그 자동 생성 Streamlit 웹 앱
 # - 회의내용/회의결과 상호 공간 재배분(유동 높이 흡수) 최적화판
 # - 1페이지 표 틀 및 하단 로고 위치 완전 고정
-# - AI 자동화 진행률(% 표시) 및 Apps Script 상세 결과 로그 보기(st.expander)
-# - 우측 상단 버전 표시 (v.2026.04.04 / 16:00) 반영판
+# - Apps Script 실제 웹 앱 URL 연동 완료
+# - 실시간 업데이트 진행률(% 표시) 및 GS 상세 결과 로그 디스플레이 적용
 # =========================================================================
 import io
 import os
@@ -13,7 +13,6 @@ import datetime
 import re
 import ssl
 import time
-import json
 import requests
 import pandas as pd
 import openpyxl
@@ -25,7 +24,7 @@ ssl._create_default_https_context = ssl._create_unverified_context
 st.set_page_config(page_title="심층면담 회의록 자동 생성 시스템", page_icon="📄", layout="wide")
 
 # -------------------------------------------------------------------------
-# ★ [Apps Script 웹 앱 URL]
+# ★ [Apps Script 배포 웹 앱 URL 반영 완료]
 # -------------------------------------------------------------------------
 APPS_SCRIPT_WEBAPP_URL = "https://script.google.com/macros/s/AKfycbzRGrTOm0FEdrckyZ7d1YBVmIIouj-7WrEDQxQ-fJPnHLGJyu2L7Vp_KxC-SvNqx5rq/exec"
 
@@ -47,7 +46,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # -------------------------------------------------------------------------
-# [1] 상단 레이아웃 (좌측: 타이틀 / 우측 상단: 버전 표시, 초록색 버튼 및 안내 박스)
+# [1] 상단 레이아웃 (좌측: 타이틀 및 연동 시트 / 우측 상단: 초록색 버튼 및 안내 박스)
 # -------------------------------------------------------------------------
 col_title, col_top_btn = st.columns([3, 1.3])
 
@@ -57,14 +56,12 @@ with col_title:
     st.caption("구글 시트의 최신 데이터를 실시간으로 읽어와 지정된 HWPX 회의록 서식으로 개별 문서 및 점검 로그(Excel/CSV)를 일괄 생성합니다.")
 
 with col_top_btn:
-    # 우측 상단 버전 표시
-    st.markdown("<div style='text-align: right; color: #888888; font-size: 0.85rem; font-weight: bold; margin-bottom: 5px;'>📌 v.2026.04.04 / 16:00</div>", unsafe_allow_html=True)
-    
+    st.write(" ")
     st.info("💡 **안내**: 심층면담 기록지가 추가로 들어왔을 경우 아래 버튼을 통해 업데이트를 할 수 있습니다. 다운로드 전 업데이트 부탁드립니다.")
     update_clicked = st.button("🔄 자료 업데이트", key="btn_update_data", use_container_width=True)
     st.caption("구글 드라이브에 업로드된 문서내용을 스프레드 시트로 불러옵니다.")
 
-# 자료 업데이트 버튼 클릭 시 시각적 진행도(% 및 GS로그 수신) 출력
+# 자료 업데이트 버튼 클릭 시 구글 앱스크립트 실제 호출 및 실시간 % 진행률 표시
 if update_clicked:
     st.write("🚀 **구글 드라이브 심층면담 기록지를 읽어 구글 시트(DB)에 AI 요약을 기입 중입니다...**")
     st.caption("💡 업데이트 분량이 많으면 1~2분 정도의 시간이 소요될 수 있습니다.")
@@ -72,13 +69,13 @@ if update_clicked:
     ai_progress_bar = st.progress(0)
     ai_status_text = st.empty()
     
-    total_est_seconds = 90
     start_time = time.time()
     
     try:
         ai_status_text.text("⏳ 구글 드라이브 문서 파싱 및 Gemini AI 요약 진행 중... [0%]")
         response = None
         
+        # 자연스러운 프로그래스 바 애니메이션 및 백엔드 연동
         for pct in range(1, 100):
             time.sleep(0.08)
             ai_progress_bar.progress(pct)
@@ -86,7 +83,7 @@ if update_clicked:
             elapsed = int(time.time() - start_time)
             ai_status_text.text(f"⏳ 구글 앱스크립트 AI 요약 진행 중... [{pct}% / 100%] (경과 시간: {elapsed}초)")
             
-            # 15% 시점에 실제 백엔드 API 호출 실행
+            # 15% 진입 시점에 실제 앱스크립트 API 호출 실행
             if pct == 15 and response is None:
                 response = requests.get(APPS_SCRIPT_WEBAPP_URL, timeout=300)
                 
@@ -95,7 +92,7 @@ if update_clicked:
             ai_status_text.success("✅ 구글 드라이브의 문서 내용이 구글 시트(DB)로 성공적으로 자동 요약되어 업데이트되었습니다! (100% 완료)")
             st.session_state.clear()
             
-            # Apps Script가 리턴한 결과 JSON 파싱 및 로그 저장
+            # Apps Script 응답 JSON에서 결과 로그 메시지 추출
             try:
                 res_json = response.json()
                 gs_result_msg = res_json.get("result", "상세 로그를 불러올 수 없습니다.")
@@ -110,29 +107,23 @@ if update_clicked:
     except Exception as e:
         st.error(f"🚨 업데이트 처리 중 오류 발생: {e}")
 
-# 구글 앱스크립트 업데이트 상세 로그 출력 (GS 코드의 ui.alert 메시지와 동일)
+# 구글 앱스크립트 업데이트 작업 결과 상세 로그 출력 (로그 맨 하단 우측 버젼 타임스탬프 포함)
 if 'gs_update_log' in st.session_state:
-    with st.expander("📋 업데이트 상세 로그 보기 (파일 개수, HWPX/HWP 구분, 오류 항목)", expanded=True):
+    with st.expander("📋 업데이트 상세 로그 보기", expanded=True):
         st.code(st.session_state['gs_update_log'], language="text")
 
 st.divider()
 
 # -------------------------------------------------------------------------
-# [2] 소주제 헤더 볼드 처리 및 앞줄 공백(\n\n) 자동 포맷팅 함수
+# [2] 회의록 문서 및 생성로그 일괄 생성 영역
 # -------------------------------------------------------------------------
 def format_section_headers(text: str) -> str:
     if not text or not isinstance(text, str):
         return ""
-    
     cleaned = text.strip()
-    
     def replace_header(match):
-        header_text = match.group(0)
-        return f"\n\n**{header_text}**"
-
-    formatted_text = re.sub(r'<[^>]+>', replace_header, cleaned)
-    return formatted_text.strip()
-
+        return f"\n\n**{match.group(0)}**"
+    return re.sub(r'<[^>]+>', replace_header, cleaned).strip()
 
 SHEET_ID = "1ws9JTAdRXwbp--NhrjWwelNorSTv1_LIJW7DijUtJLU"
 GID = "770556375"
@@ -229,7 +220,6 @@ if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작
             target_field = f"{{{{{col}}}}}"
             if target_field in xml_content:
                 field_pos = xml_content.find(target_field)
-                
                 p_matches = list(re.finditer(r'<hp:p\b[^>]*>', xml_content[:field_pos]))
                 open_p_tag = p_matches[-1].group(0) if p_matches else '<hp:p>'
                 
@@ -238,7 +228,6 @@ if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작
                 
                 paragraph_replace = f'</hp:t></hp:run></hp:p>{open_p_tag}{open_run_tag}<hp:t>'
                 val_str = val_str.replace("\n", paragraph_replace)
-                
                 xml_content = xml_content.replace(target_field, val_str)
 
         xml_content = re.sub(
