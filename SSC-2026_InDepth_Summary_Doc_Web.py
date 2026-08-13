@@ -2,7 +2,8 @@
 # [웹 호스팅용] 심층면담 회의록 및 점검 로그 자동 생성 Streamlit 웹 앱
 # - 회의내용/회의결과 상호 공간 재배분(유동 높이 흡수) 최적화판
 # - 1페이지 표 틀 및 하단 로고 위치 완전 고정
-# - AI 자동화 진행률(% 표시) 및 Apps Script 상세 결과 로그 보기(st.expander) 추가
+# - AI 자동화 진행률(% 표시) 및 Apps Script 상세 결과 로그 보기(st.expander)
+# - 우측 상단 버전 표시 (v.2026.04.04 / 16:00) 반영판
 # =========================================================================
 import io
 import os
@@ -46,7 +47,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # -------------------------------------------------------------------------
-# [1] 상단 레이아웃 (좌측: 타이틀 / 우측 상단: 초록색 버튼 및 상시 안내 박스)
+# [1] 상단 레이아웃 (좌측: 타이틀 / 우측 상단: 버전 표시, 초록색 버튼 및 안내 박스)
 # -------------------------------------------------------------------------
 col_title, col_top_btn = st.columns([3, 1.3])
 
@@ -56,7 +57,9 @@ with col_title:
     st.caption("구글 시트의 최신 데이터를 실시간으로 읽어와 지정된 HWPX 회의록 서식으로 개별 문서 및 점검 로그(Excel/CSV)를 일괄 생성합니다.")
 
 with col_top_btn:
-    st.write(" ")
+    # 우측 상단 버전 표시
+    st.markdown("<div style='text-align: right; color: #888888; font-size: 0.85rem; font-weight: bold; margin-bottom: 5px;'>📌 v.2026.04.04 / 16:00</div>", unsafe_allow_html=True)
+    
     st.info("💡 **안내**: 심층면담 기록지가 추가로 들어왔을 경우 아래 버튼을 통해 업데이트를 할 수 있습니다. 다운로드 전 업데이트 부탁드립니다.")
     update_clicked = st.button("🔄 자료 업데이트", key="btn_update_data", use_container_width=True)
     st.caption("구글 드라이브에 업로드된 문서내용을 스프레드 시트로 불러옵니다.")
