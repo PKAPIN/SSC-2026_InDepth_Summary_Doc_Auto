@@ -1,8 +1,8 @@
 # =========================================================================
-# [웹 호스팅용] 심층면담 회의록 및 점검 로그 자동 생성 Streamlit 웹 앱
-# - 회의내용/회의결과 높이 고정 완전 제거 (글자 수에 따라 유동적 자동 확장)
-# - 구글 시트 한 줄 공백(\n\n) 단락 서식 100% 보존
-# - 백그라운드 비동기 멀티스레딩 적용
+# [웹 호스팅용] 심층면담 회의록 및 점검 로그 자동 생성 Streamlit 웹 앱 (최종)
+# - 회의내용/회의결과 유동 높이 자동 확장 적용
+# - 구글 시트 한 줄 공백(\n\n) 서식 100% 보존
+# - 백그라운드 비동기 멀티스레딩 및 메모리 안전 해제 적용
 # =========================================================================
 import io
 import os
@@ -222,7 +222,6 @@ if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작
                 
             val_str = val_str.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
             val_str = val_str.replace("\r\n", "\n").replace("\r", "\n")
-            # ★ \n\n 축소 구문 삭제 (한 줄 공백 서식 유지)
             
             target_field = f"{{{{{col}}}}}"
             if target_field in xml_content:
@@ -236,8 +235,6 @@ if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작
                 paragraph_replace = f'</hp:t></hp:run></hp:p>{open_p_tag}{open_run_tag}<hp:t>'
                 val_str = val_str.replace("\n", paragraph_replace)
                 xml_content = xml_content.replace(target_field, val_str)
-
-        # ★ 높이 강제 고정(re.sub) 구문 완전히 삭제됨 -> 표 셀이 텍스트 양에 맞춰 유동 확장
 
         xml_content = re.sub(r'<hp:ctrl><hp:fieldBegin.*?</hp:ctrl>', '', xml_content, flags=re.DOTALL)
         xml_content = re.sub(r'<hp:ctrl><hp:fieldEnd.*?</hp:ctrl>', '', xml_content, flags=re.DOTALL)
@@ -304,7 +301,7 @@ if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작
                 cell.font = warning_text_font; cell.alignment = Alignment(horizontal="center", vertical="center")
                 
     wb.save(excel_buffer)
-    wb.close()  # ★ 엑셀 메모리 해제
+    wb.close()
     excel_bytes = excel_buffer.getvalue()
     csv_bytes = excel_log_df.to_csv(index=False, encoding='utf-8-sig').encode('utf-8-sig')
 
