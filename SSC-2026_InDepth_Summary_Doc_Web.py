@@ -1,5 +1,7 @@
 # =========================================================================
-# [웹 호스팅용] 심층면담 회의록 문서 및 점검 로그 자동 생성 Streamlit 웹 앱
+# [웹 호스팅용] 심층면담 회의록 및 점검 로그 자동 생성 Streamlit 웹 앱
+# - HWPX XML 트리를 파괴하지 않고 텍스트 내부 태그만 안전하게 확장
+# - 소주제 헤더(<...>) 전 한 줄 공백(\n\n) 유지 및 HWPX Bold(charPrRef="1") 적용
 # =========================================================================
 import io
 import os
@@ -207,6 +209,7 @@ if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작
             
             if col in ['회의내용', '회의결과']:
                 val_str = format_section_headers(val_str)
+                val_str = val_str.replace("**", "")
                 
             val_str = val_str.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
             val_str = val_str.replace("\r\n", "\n").replace("\r", "\n")
@@ -220,9 +223,25 @@ if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작
                 run_matches = list(re.finditer(r'<hp:run\b[^>]*>', xml_content[:field_pos]))
                 open_run_tag = run_matches[-1].group(0) if run_matches else '<hp:run>'
                 
-                paragraph_replace = f'</hp:t></hp:run></hp:p>{open_p_tag}{open_run_tag}<hp:t>'
-                val_str = val_str.replace("\n", paragraph_replace)
-                xml_content = xml_content.replace(target_field, val_str)
+                # 파일 손상 없이 소주제 헤더만 볼드(charPrRef="1") 처리하는 안전한 XML 내부 파싱
+                lines = val_str.split("\n")
+                xml_parts = []
+                
+                for i, line in enumerate(lines):
+                    is_header = line.strip().startswith("&lt;") and line.strip().endswith("&gt;")
+                    
+                    if is_header:
+                        run_tag = re.sub(r'charPrRef="[0-9]+"', 'charPrRef="1"', open_run_tag) if 'charPrRef' in open_run_tag else open_run_tag.replace('<hp:run', '<hp:run charPrRef="1"')
+                    else:
+                        run_tag = open_run_tag
+
+                    if i == 0:
+                        xml_parts.append(f'</hp:t></hp:run>{run_tag}<hp:t>{line}')
+                    else:
+                        xml_parts.append(f'</hp:t></hp:run></hp:p>{open_p_tag}{run_tag}<hp:t>{line}')
+                
+                replaced_xml = "".join(xml_parts)
+                xml_content = xml_content.replace(target_field, replaced_xml)
 
         xml_content = re.sub(r'<hp:ctrl><hp:fieldBegin.*?</hp:ctrl>', '', xml_content, flags=re.DOTALL)
         xml_content = re.sub(r'<hp:ctrl><hp:fieldEnd.*?</hp:ctrl>', '', xml_content, flags=re.DOTALL)
