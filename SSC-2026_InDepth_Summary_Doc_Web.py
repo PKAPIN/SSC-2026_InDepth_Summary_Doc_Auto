@@ -1,10 +1,5 @@
 # =========================================================================
-# [웹 호스팅용] 심층면담 회의록 및 점검 로그 자동 생성 Streamlit 웹 앱 (최종)
-# - 신규 배포 URL 적용 완료
-# - 구글 서버 캐시 우회(nocache) 적용 완료
-# - 회의내용/회의결과 유동 높이 자동 확장 적용
-# - 구글 시트 한 줄 공백(\n\n) 서식 100% 보존
-# - 백그라운드 비동기 멀티스레딩 및 메모리 안전 해제 적용
+# [웹 호스팅용] 심층면담 회의록 및 점검 로그 자동 생성 Streamlit 웹 앱
 # =========================================================================
 import io
 import os
@@ -25,9 +20,6 @@ ssl._create_default_https_context = ssl._create_unverified_context
 
 st.set_page_config(page_title="심층면담 회의록 자동 생성 시스템", page_icon="📄", layout="wide")
 
-# -------------------------------------------------------------------------
-# ★ [신규 반영] Apps Script 새 배포 웹 앱 URL
-# -------------------------------------------------------------------------
 APPS_SCRIPT_WEBAPP_URL = "https://script.google.com/macros/s/AKfycbzip_5GhlxnL6DjLhUQfbn04djF4AYmio1-Ij5hS5WdujGYAN-ZRKRA2ck0_K03TCdn/exec"
 
 st.markdown("""
@@ -46,9 +38,6 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# -------------------------------------------------------------------------
-# [1] 상단 레이아웃
-# -------------------------------------------------------------------------
 col_title, col_top_btn = st.columns([3, 1.3])
 
 with col_title:
@@ -73,7 +62,6 @@ if update_clicked:
     
     def fetch_apps_script():
         try:
-            # ★ 캐시 우회: 이전 로그가 그대로 출력되는 현상 방지
             nocache_url = f"{APPS_SCRIPT_WEBAPP_URL}?_nocache={int(time.time())}"
             res = requests.get(nocache_url, allow_redirects=True, timeout=600)
             api_result["response"] = res
@@ -139,16 +127,12 @@ if 'gs_update_log' in st.session_state:
 
 st.divider()
 
-# -------------------------------------------------------------------------
-# [2] 회의록 문서 및 생성로그 일괄 생성 영역
-# -------------------------------------------------------------------------
 def format_section_headers(text: str) -> str:
     if not text or not isinstance(text, str):
         return ""
     cleaned = text.strip()
     def replace_header(match):
         return f"\n\n{match.group(0)}"
-    # ★ 수정: 소주제 헤더(<...>) 바로 앞에 \n\n이 없는 경우에만 \n\n을 붙여 공백 중복 방지
     return re.sub(r'(?<!\n\n)<[^>]+>', replace_header, cleaned).strip()
 
 SHEET_ID = "1ws9JTAdRXwbp--NhrjWwelNorSTv1_LIJW7DijUtJLU"
@@ -158,7 +142,7 @@ if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작
     
     hwpx_files = [f for f in glob.glob("*.hwpx") if not os.path.basename(f).startswith("~$")]
     if not hwpx_files:
-        st.error("❌ 저장소 내에서 지정된 .hwpx 템플릿 파일을 찾을 수 무 없습니다. GitHub 저장소에 .hwpx 파일을 올려주세요.")
+        st.error("❌ 저장소 내에서 지정된 .hwpx 템플릿 파일을 찾을 수 없습니다. GitHub 저장소에 .hwpx 파일을 올려주세요.")
         st.stop()
         
     template_path = max(hwpx_files, key=os.path.getmtime)
@@ -223,7 +207,6 @@ if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작
             
             if col in ['회의내용', '회의결과']:
                 val_str = format_section_headers(val_str)
-                # ★ 수정: val_str.replace("**", "") 삭제하여 볼드 표기 유지
                 
             val_str = val_str.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
             val_str = val_str.replace("\r\n", "\n").replace("\r", "\n")
@@ -237,9 +220,25 @@ if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작
                 run_matches = list(re.finditer(r'<hp:run\b[^>]*>', xml_content[:field_pos]))
                 open_run_tag = run_matches[-1].group(0) if run_matches else '<hp:run>'
                 
-                paragraph_replace = f'</hp:t></hp:run></hp:p>{open_p_tag}{open_run_tag}<hp:t>'
-                val_str = val_str.replace("\n", paragraph_replace)
-                xml_content = xml_content.replace(target_field, val_str)
+                bold_run_tag = open_run_tag
+                if 'charPrRef' in bold_run_tag:
+                    bold_run_tag = re.sub(r'charPrRef="[0-9]+"', 'charPrRef="1"', bold_run_tag)
+                else:
+                    bold_run_tag = bold_run_tag.replace('<hp:run', '<hp:run charPrRef="1"')
+
+                lines = val_str.split("\n")
+                replaced_parts = []
+                for i, line in enumerate(lines):
+                    is_header = line.strip().startswith("&lt;") and line.strip().endswith("&gt;")
+                    curr_run = bold_run_tag if is_header else open_run_tag
+                    
+                    if i == 0:
+                        replaced_parts.append(f'{curr_run}<hp:t>{line}</hp:t></hp:run>')
+                    else:
+                        replaced_parts.append(f'</hp:p>{open_p_tag}{curr_run}<hp:t>{line}</hp:t></hp:run>')
+                
+                xml_content = xml_content.replace(f'{open_run_tag}<hp:t>{target_field}</hp:t>', "".join(replaced_parts))
+                xml_content = xml_content.replace(target_field, "".join(replaced_parts))
 
         xml_content = re.sub(r'<hp:ctrl><hp:fieldBegin.*?</hp:ctrl>', '', xml_content, flags=re.DOTALL)
         xml_content = re.sub(r'<hp:ctrl><hp:fieldEnd.*?</hp:ctrl>', '', xml_content, flags=re.DOTALL)
