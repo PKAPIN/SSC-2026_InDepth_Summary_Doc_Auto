@@ -118,17 +118,36 @@ if update_clicked:
     response = api_result["response"]
     error = api_result["error"]
     
-    # 응답 결과 처리
+    # 응답 결과 처리 분기 (오류/타임아웃/정상 시 건수 표시)
     if response and response.status_code == 200:
         res_text = response.text.strip()
         
-        if res_text.startswith("<!DOCTYPE html>") or "<html" in res_text.lower():
+        # 1) HWP(구형 한글 파일) 포함 감지 시
+        if "HWP" in res_text.upper() and ("NOT_SUPPORTED" in res_text.upper() or "포맷" in res_text or "확장자" in res_text):
             ai_progress_bar.progress(100)
-            ai_status_text.warning("⚠️ 응답 시간이 초과되었습니다. 처리 중인 남은 항목 작성을 위해 [🔄 자료 업데이트] 버튼을 한 번 더 눌러 시도해 주세요.")
-            st.session_state['gs_update_log'] = "⚠️ 구글 서버 응답 시간 초과(6분 제한)로 일시 중단되었습니다.\n구글 시트(DB)에는 현재까지 작성된 데이터가 저장되어 있으니, 남은 항목 완결을 위해 [🔄 자료 업데이트] 버튼을 한 번 더 눌러주세요."
+            ai_status_text.error("❌ [.hwp] 확장자 파일이 포함되어 있어 작업이 중단되었습니다.")
+            st.session_state['gs_update_log'] = (
+                "⚠️ [.hwp 파일 포함 오류 안내]\n"
+                "구글 드라이브 내에 자동 분석이 불가능한 구형 [.hwp] 파일이 존재합니다.\n"
+                "해당 문서를 [.hwpx] 포맷으로 변환하여 업로드 후 다시 [🔄 자료 업데이트]를 눌러주세요.\n\n"
+                f"📋 서버 응답 결과:\n{res_text}"
+            )
+            
+        # 2) 구글 서버 6분 실행 제한 초과 시 (HTML 에러 응답)
+        elif res_text.startswith("<!DOCTYPE html>") or "<html" in res_text.lower():
+            ai_progress_bar.progress(100)
+            ai_status_text.warning("⏳ 처리 분량이 많아 안전하게 일시 중단되었습니다. (현재까지 작업분 시트 저장 완료)")
+            st.session_state['gs_update_log'] = (
+                "⚠️ [구글 서버 응답 시간 초과 (6분 제한)]\n"
+                "처리할 문서 분량이 많아 구글 서버 제한시간(6분)에 도달했습니다.\n"
+                "현재까지 작성된 데이터는 구글 시트에 안전하게 저장 완료되었습니다.\n\n"
+                "👉 남은 항목 완결을 위해 [🔄 자료 업데이트] 버튼을 한 번 더 눌러주세요."
+            )
+            
+        # 3) 정상적으로 완결된 경우
         else:
             ai_progress_bar.progress(100)
-            ai_status_text.success("✅ 구글 드라이브의 문서 내용이 구글 시트(DB)로 성공적으로 자동 요약되어 동기화되었습니다! (100% 완료)")
+            ai_status_text.success("✅ 구글 드라이브 문서 동기화 완결! (100% 완료)")
             st.session_state.clear()
             
             try:
