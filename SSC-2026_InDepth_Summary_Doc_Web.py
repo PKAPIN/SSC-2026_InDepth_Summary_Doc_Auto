@@ -1,7 +1,7 @@
 # =========================================================================
 # [웹 호스팅용] 심층면담 회의록 및 점검 로그 자동 생성 Streamlit 웹 앱
-# - HWPX XML 트리를 파괴하지 않고 텍스트 내부 태그만 안전하게 확장
-# - 소주제 헤더(<...>) 전 한 줄 공백(\n\n) 유지 및 HWPX Bold(charPrRef="1") 적용
+# - 소주제 헤더 감지 조건문 교정 완료 (Bold 정상 적용)
+# - HWPX 파일 손상 방지 안전 XML 치환 적용
 # =========================================================================
 import io
 import os
@@ -211,9 +211,6 @@ if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작
                 val_str = format_section_headers(val_str)
                 val_str = val_str.replace("**", "")
                 
-            val_str = val_str.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-            val_str = val_str.replace("\r\n", "\n").replace("\r", "\n")
-            
             target_field = f"{{{{{col}}}}}"
             if target_field in xml_content:
                 field_pos = xml_content.find(target_field)
@@ -223,12 +220,16 @@ if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작
                 run_matches = list(re.finditer(r'<hp:run\b[^>]*>', xml_content[:field_pos]))
                 open_run_tag = run_matches[-1].group(0) if run_matches else '<hp:run>'
                 
-                # 파일 손상 없이 소주제 헤더만 볼드(charPrRef="1") 처리하는 안전한 XML 내부 파싱
                 lines = val_str.split("\n")
                 xml_parts = []
                 
                 for i, line in enumerate(lines):
-                    is_header = line.strip().startswith("&lt;") and line.strip().endswith("&gt;")
+                    clean_l = line.strip()
+                    # ★ 교정: 특수문자 변환 전/후 소주제 헤더(<...>) 정확 감지
+                    is_header = (clean_l.startswith("<") and clean_l.endswith(">")) or (clean_l.startswith("&lt;") and clean_l.endswith("&gt;"))
+                    
+                    # XML 특수문자 치환
+                    escaped_line = line.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
                     
                     if is_header:
                         run_tag = re.sub(r'charPrRef="[0-9]+"', 'charPrRef="1"', open_run_tag) if 'charPrRef' in open_run_tag else open_run_tag.replace('<hp:run', '<hp:run charPrRef="1"')
@@ -236,9 +237,9 @@ if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작
                         run_tag = open_run_tag
 
                     if i == 0:
-                        xml_parts.append(f'</hp:t></hp:run>{run_tag}<hp:t>{line}')
+                        xml_parts.append(f'</hp:t></hp:run>{run_tag}<hp:t>{escaped_line}')
                     else:
-                        xml_parts.append(f'</hp:t></hp:run></hp:p>{open_p_tag}{run_tag}<hp:t>{line}')
+                        xml_parts.append(f'</hp:t></hp:run></hp:p>{open_p_tag}{run_tag}<hp:t>{escaped_line}')
                 
                 replaced_xml = "".join(xml_parts)
                 xml_content = xml_content.replace(target_field, replaced_xml)
