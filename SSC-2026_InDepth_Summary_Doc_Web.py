@@ -151,14 +151,20 @@ st.divider()
 # [2] 회의록 문서(HWPX) 및 생성 로그 일괄 생성 기능
 # -------------------------------------------------------------------------
 
-# ★ 1번 성공 요구사항 함수: 소주제 헤더(<...>) 앞에 빈 줄(\n\n)이 없을 때만 1줄 공백 보장 (중복 공백 방지)
+# ★ 소주제 헤더(<...>) 앞에 빈 줄(\n\n)을 보장하고 볼드 처리를 위한 구분 태그 부여 함수
 def format_section_headers(text: str) -> str:
     if not text or not isinstance(text, str):
         return ""
     cleaned = text.strip()
+    
+    # 소주제 헤더 앞에 빈 줄(\n\n)이 없을 때 공백 보장
     def replace_header(match):
         return f"\n\n{match.group(0)}"
-    return re.sub(r'(?<!\n\n)<[^>]+>', replace_header, cleaned).strip()
+    formatted = re.sub(r'(?<!\n\n)<[^>]+>', replace_header, cleaned).strip()
+    
+    # 소주제 헤더(<...>) 영역을 볼드 구분용 태그로 감싸기
+    formatted = re.sub(r'(<[^>]+>)', r'[[BOLD_START]]\1[[BOLD_END]]', formatted)
+    return formatted
 
 # 구글 스프레드시트 고유 ID 및 탭 GID 번호
 SHEET_ID = "1ws9JTAdRXwbp--NhrjWwelNorSTv1_LIJW7DijUtJLU"
@@ -240,7 +246,7 @@ if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작
             elif isinstance(val, datetime.time): val_str = val.strftime('%H:%M')
             else: val_str = str(val).strip()
             
-            # 회의내용/회의결과일 경우 소주제 전 공백 처리 적용
+            # 회의내용/회의결과일 경우 소주제 전 공백 처리 및 볼드 구분 태그 적용
             if col in ['회의내용', '회의결과']:
                 val_str = format_section_headers(val_str)
                 val_str = val_str.replace("**", "") # 잔여 마크다운 표기 정돈
@@ -249,7 +255,11 @@ if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작
             val_str = val_str.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
             val_str = val_str.replace("\r\n", "\n").replace("\r", "\n")
             
-            # HWPX XML 문단 속성을 유지하며 텍스트 줄바꿈(\n)을 문서에 주입하는 구문
+            # 이스케이프 과정에서 변경된 구분 태그 복원
+            val_str = val_str.replace("&lt;[[BOLD_START]]&gt;", "[[BOLD_START]]").replace("&lt;[[BOLD_END]]&gt;", "[[BOLD_END]]")
+            val_str = val_str.replace("[[BOLD_START]]", "[[BOLD_START]]").replace("[[BOLD_END]]", "[[BOLD_END]]")
+
+            # HWPX XML 문단 속성을 유지하며 텍스트 줄바꿈(\n) 및 볼드 처리 주입
             target_field = f"{{{{{col}}}}}"
             if target_field in xml_content:
                 field_pos = xml_content.find(target_field)
@@ -259,9 +269,17 @@ if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작
                 run_matches = list(re.finditer(r'<hp:run\b[^>]*>', xml_content[:field_pos]))
                 open_run_tag = run_matches[-1].group(0) if run_matches else '<hp:run>'
                 
-                # 파일 깨짐이 없는 100% 안전한 원본 치환 방식
+                # 줄바꿈(\n) 치환
                 paragraph_replace = f'</hp:t></hp:run></hp:p>{open_p_tag}{open_run_tag}<hp:t>'
                 val_str = val_str.replace("\n", paragraph_replace)
+
+                # 소주제([[BOLD_START]] ... [[BOLD_END]]) 구간 HWPX XML 볼드 속성(<hp:bold/>) 적용
+                bold_run_tag = f'</hp:t></hp:run>{open_run_tag}<hp:rPr><hp:bold/></hp:rPr><hp:t>'
+                normal_run_tag = f'</hp:t></hp:run>{open_run_tag}<hp:t>'
+                
+                val_str = val_str.replace("[[BOLD_START]]", bold_run_tag)
+                val_str = val_str.replace("[[BOLD_END]]", normal_run_tag)
+
                 xml_content = xml_content.replace(target_field, val_str)
 
         # 누름틀 빨간 괄호 필드 선언 제거 및 불필요한 태그 정리
