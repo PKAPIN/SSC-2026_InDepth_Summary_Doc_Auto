@@ -1,29 +1,38 @@
 # =========================================================================
 # [웹 호스팅용] 심층면담 회의록 및 점검 로그 자동 생성 Streamlit 웹 앱
-# - 소주제 헤더 감지 조건문 교정 완료 (Bold 정상 적용)
-# - HWPX 파일 손상 방지 안전 XML 치환 적용
+# - 역할: 구글 시트의 데이터를 읽어와 HWPX 서류 및 엑셀/CSV 생성로그를 일괄 자동 생성
 # =========================================================================
-import io
-import os
-import glob
-import zipfile
-import datetime
-import re
-import ssl
-import time
-import threading
-import requests
-import pandas as pd
-import openpyxl
-from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
-import streamlit as st
 
+# -------------------------------------------------------------------------
+# 1. 필수 라이브러리(부품) 불러오기
+# -------------------------------------------------------------------------
+import io          # 메모리 상에서 파일 데이터(바이트)를 임시로 다루는 도구
+import os          # 컴퓨터 파일 및 폴더 경로를 다루는 도구
+import glob        # 특정 확장자(.hwpx)의 파일을 검색하는 도구
+import zipfile     # HWPX(압축파일 구조) 및 ZIP 압축파일을 생성/해제하는 도구
+import datetime    # 오늘 날짜와 시간(v.260818 등)을 만드는 도구
+import re          # 정규식: 텍스트 안의 특정 패턴(소주제, 태그 등)을 찾아서 바꾸는 도구
+import ssl         # 인터넷 보안 통신(HTTPS) 연결 도구
+import time        # 작업 진행 중 대기 시간을 제어하는 도구
+import threading   # 구글 시트 업데이트 시 배경에서 작업을 따로 돌리는 도구
+import requests    # 인터넷 웹 주소(URL)로 데이터를 요청하여 받아오는 도구
+import pandas as pd # 구글 시트/CSV 데이터를 표(Table) 형태로 다루는 핵심 도구
+import openpyxl    # 엑셀(.xlsx) 파일 생성 및 색상/테두리 스타일을 지정하는 도구
+from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
+import streamlit as st # 웹 화면 UI(버튼, 입력창, 다운로드)를 만들어주는 웹 프레임워크
+
+# 인터넷 보안 연결(SSL) 검증 오류 방지 설정
 ssl._create_default_https_context = ssl._create_unverified_context
 
+# 웹 브라우저 탭의 제목과 웹페이지 레이아웃(넓게 보기) 설정
 st.set_page_config(page_title="심층면담 회의록 자동 생성 시스템", page_icon="📄", layout="wide")
 
+# -------------------------------------------------------------------------
+# ★ Apps Script(구글 드라이브-시트 AI 요약 연동) 배포 웹 앱 URL 주소
+# -------------------------------------------------------------------------
 APPS_SCRIPT_WEBAPP_URL = "https://script.google.com/macros/s/AKfycbzip_5GhlxnL6DjLhUQfbn04djF4AYmio1-Ij5hS5WdujGYAN-ZRKRA2ck0_K03TCdn/exec"
 
+# 웹 화면 내 [🔄 자료 업데이트] 초록색 버튼 디자인(CSS)
 st.markdown("""
     <style>
     div.stButton > button[key="btn_update_data"] {
@@ -40,7 +49,10 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-col_title, col_top_btn = st.columns([3, 1.3])
+# -------------------------------------------------------------------------
+# [1] 웹 앱 상단 타이틀 및 구글 시트 업데이트 영역
+# -------------------------------------------------------------------------
+col_title, col_top_btn = st.columns([3, 1.3]) # 화면을 좌/우 2개 컬럼(비율 3:1.3)으로 분할
 
 with col_title:
     st.title("📄 심층면담 회의록 문서 및 로그 자동 생성기")
@@ -53,15 +65,17 @@ with col_top_btn:
     update_clicked = st.button("🔄 자료 업데이트", key="btn_update_data", use_container_width=True)
     st.caption("구글 드라이브에 업로드된 문서내용을 스프레드 시트로 불러옵니다.")
 
+# [🔄 자료 업데이트] 버튼을 눌렀을 때 실행되는 구글 드라이브/시트 동기화 로직
 if update_clicked:
     st.write("🚀 **구글 드라이브 심층면담 기록지를 읽어 구글 시트(DB)에 AI 요약을 기입 중입니다...**")
     st.caption("💡 업데이트 분량이 많으면 1~2분 정도의 시간이 소요될 수 있습니다.")
     
-    ai_progress_bar = st.progress(0)
-    ai_status_text = st.empty()
+    ai_progress_bar = st.progress(0) # 화면에 0%~100% 진행바 표시
+    ai_status_text = st.empty()      # 진행 상태 문구를 표시할 빈 공간
     
     api_result = {"response": None, "error": None, "done": False}
     
+    # 구글 앱스 스크립트(GAS)를 호출하는 함수 (서버가 응답할 때까지 대기)
     def fetch_apps_script():
         try:
             nocache_url = f"{APPS_SCRIPT_WEBAPP_URL}?_nocache={int(time.time())}"
@@ -72,12 +86,14 @@ if update_clicked:
         finally:
             api_result["done"] = True
 
+    # 화면이 멈추지 않도록 별도 쓰레드(작업선)에서 구글 데이터 전송 요청
     thread = threading.Thread(target=fetch_apps_script)
     thread.start()
     
     start_time = time.time()
     current_pct = 0
     
+    # 구글 앱스 스크립트 작업이 끝날 때까지 화면 진행바(0% -> 95%)를 움직여주는 루프
     while not api_result["done"]:
         time.sleep(0.8)
         elapsed = int(time.time() - start_time)
@@ -87,6 +103,7 @@ if update_clicked:
             
         ai_progress_bar.progress(current_pct)
         
+        # 단계별 안내 문구 전환
         if current_pct < 20:
             stage_msg = "🔍 [1/4단계] 구글 드라이브 내 심층면담 기록지 파일 탐색 및 HWP/HWPX 구조 진단 중..."
         elif current_pct < 45:
@@ -101,6 +118,7 @@ if update_clicked:
     response = api_result["response"]
     error = api_result["error"]
     
+    # 응답 결과 처리
     if response and response.status_code == 200:
         res_text = response.text.strip()
         
@@ -129,6 +147,11 @@ if 'gs_update_log' in st.session_state:
 
 st.divider()
 
+# -------------------------------------------------------------------------
+# [2] 회의록 문서(HWPX) 및 생성 로그 일괄 생성 기능
+# -------------------------------------------------------------------------
+
+# ★ 1번 성공 요구사항 함수: 소주제 헤더(<...>) 앞에 빈 줄(\n\n)이 없을 때만 1줄 공백 보장 (중복 공백 방지)
 def format_section_headers(text: str) -> str:
     if not text or not isinstance(text, str):
         return ""
@@ -137,11 +160,14 @@ def format_section_headers(text: str) -> str:
         return f"\n\n{match.group(0)}"
     return re.sub(r'(?<!\n\n)<[^>]+>', replace_header, cleaned).strip()
 
+# 구글 스프레드시트 고유 ID 및 탭 GID 번호
 SHEET_ID = "1ws9JTAdRXwbp--NhrjWwelNorSTv1_LIJW7DijUtJLU"
 GID = "770556375"
 
+# [🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작] 버튼 클릭 시
 if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작", type="primary", use_container_width=True):
     
+    # 1. 깃허브 저장소에 올라가 있는 .hwpx 서식 템플릿 파일 찾아오기
     hwpx_files = [f for f in glob.glob("*.hwpx") if not os.path.basename(f).startswith("~$")]
     if not hwpx_files:
         st.error("❌ 저장소 내에서 지정된 .hwpx 템플릿 파일을 찾을 수 없습니다. GitHub 저장소에 .hwpx 파일을 올려주세요.")
@@ -149,30 +175,35 @@ if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작
         
     template_path = max(hwpx_files, key=os.path.getmtime)
     with open(template_path, "rb") as f:
-        hwpx_bytes = f.read()
+        hwpx_bytes = f.read() # HWPX 템플릿 파일 바이너리 데이터 읽기
 
+    # 2. 구글 스프레드시트 최신 데이터 실시간 불러오기 (캐시 우회)
     with st.spinner("🔄 구글 시트에서 최신 데이터를 불러오는 중..."):
         try:
             nocache_url = f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/export?format=csv&gid={GID}&_nocache={int(time.time())}"
             df_raw = pd.read_csv(nocache_url)
-            data_df = df_raw.iloc[2:].dropna(subset=['문서ID']).copy()
+            data_df = df_raw.iloc[2:].dropna(subset=['문서ID']).copy() # 3번째 행부터 실제 데이터 가져오기
         except Exception as e:
             st.error(f"❌ 구글 시트 데이터를 읽어오는 중 오류가 발생했습니다: {e}")
             st.stop()
 
+    # 3. HWPX 파일 구조 해제 (ZIP 압축 해제 형태로 internal XML 읽기)
     hwpx_zip = zipfile.ZipFile(io.BytesIO(hwpx_bytes), 'r')
     template_infolist = hwpx_zip.infolist()
     template_files = {info.filename: hwpx_zip.read(info.filename) for info in template_infolist}
     
+    # 문서 메인 본문 XML파일(section0.xml) 추출
     sec0_text = template_files['Contents/section0.xml'].decode('utf-8')
-    commands = re.findall(r'<hp:stringParam name="Command">(.*?)</hp:stringParam>', sec0_text)
     
+    # 템플릿 안의 {{누름틀}} 치환 매핑 필드 자동 감지
+    commands = re.findall(r'<hp:stringParam name="Command">(.*?)</hp:stringParam>', sec0_text)
     merge_fields = []
     for cmd in commands:
         if cmd not in merge_fields:
             merge_fields.append(cmd)
     total_merge_cnt = len(merge_fields)
 
+    # 일시/시작시간 기준 데이터 시간순 정렬
     data_df['일시_dt'] = pd.to_datetime(data_df['일시'], errors='coerce')
     sorted_df = data_df.sort_values(by=['일시_dt', '시작시간', '학교명'], na_position='last').reset_index(drop=True)
 
@@ -186,6 +217,7 @@ if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작
     progress_text = st.empty()
     total_rows = len(sorted_df)
 
+    # 4. 구글 시트의 행(Row) 개수만큼 HWPX 문서 각각 생성 시작
     for idx, (_, row) in enumerate(sorted_df.iterrows(), start=1):
         doc_id = str(row['문서ID']).strip()
         school = str(row['학교명']).strip() if pd.notna(row['학교명']) else ""
@@ -197,6 +229,7 @@ if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작
         xml_content = template_files['Contents/section0.xml'].decode('utf-8')
         missing_fields = []
 
+        # 열(Column) 단위로 데이터 매핑 및 XML 치환
         for col in data_df.columns:
             if col == '일시_dt': continue
             val = row[col]
@@ -207,10 +240,16 @@ if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작
             elif isinstance(val, datetime.time): val_str = val.strftime('%H:%M')
             else: val_str = str(val).strip()
             
+            # 회의내용/회의결과일 경우 소주제 전 공백 처리 적용
             if col in ['회의내용', '회의결과']:
                 val_str = format_section_headers(val_str)
-                val_str = val_str.replace("**", "")
+                val_str = val_str.replace("**", "") # 잔여 마크다운 표기 정돈
                 
+            # XML 특수문자 기본 이스케이프
+            val_str = val_str.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+            val_str = val_str.replace("\r\n", "\n").replace("\r", "\n")
+            
+            # HWPX XML 문단 속성을 유지하며 텍스트 줄바꿈(\n)을 문서에 주입하는 구문
             target_field = f"{{{{{col}}}}}"
             if target_field in xml_content:
                 field_pos = xml_content.find(target_field)
@@ -220,35 +259,18 @@ if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작
                 run_matches = list(re.finditer(r'<hp:run\b[^>]*>', xml_content[:field_pos]))
                 open_run_tag = run_matches[-1].group(0) if run_matches else '<hp:run>'
                 
-                lines = val_str.split("\n")
-                xml_parts = []
-                
-                for i, line in enumerate(lines):
-                    clean_l = line.strip()
-                    # ★ 교정: 특수문자 변환 전/후 소주제 헤더(<...>) 정확 감지
-                    is_header = (clean_l.startswith("<") and clean_l.endswith(">")) or (clean_l.startswith("&lt;") and clean_l.endswith("&gt;"))
-                    
-                    # XML 특수문자 치환
-                    escaped_line = line.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-                    
-                    if is_header:
-                        run_tag = re.sub(r'charPrRef="[0-9]+"', 'charPrRef="1"', open_run_tag) if 'charPrRef' in open_run_tag else open_run_tag.replace('<hp:run', '<hp:run charPrRef="1"')
-                    else:
-                        run_tag = open_run_tag
+                # 파일 깨짐이 없는 100% 안전한 원본 치환 방식
+                paragraph_replace = f'</hp:t></hp:run></hp:p>{open_p_tag}{open_run_tag}<hp:t>'
+                val_str = val_str.replace("\n", paragraph_replace)
+                xml_content = xml_content.replace(target_field, val_str)
 
-                    if i == 0:
-                        xml_parts.append(f'</hp:t></hp:run>{run_tag}<hp:t>{escaped_line}')
-                    else:
-                        xml_parts.append(f'</hp:t></hp:run></hp:p>{open_p_tag}{run_tag}<hp:t>{escaped_line}')
-                
-                replaced_xml = "".join(xml_parts)
-                xml_content = xml_content.replace(target_field, replaced_xml)
-
+        # 누름틀 빨간 괄호 필드 선언 제거 및 불필요한 태그 정리
         xml_content = re.sub(r'<hp:ctrl><hp:fieldBegin.*?</hp:ctrl>', '', xml_content, flags=re.DOTALL)
         xml_content = re.sub(r'<hp:ctrl><hp:fieldEnd.*?</hp:ctrl>', '', xml_content, flags=re.DOTALL)
         xml_content = re.sub(r'<hp:linesegarray>.*?</hp:linesegarray>', '<hp:linesegarray/>', xml_content, flags=re.DOTALL)
         xml_content = re.sub(r'(<hp:t>\s*</hp:t>\s*<hp:t>\s*,\s*</hp:t>)+', '', xml_content)
 
+        # 완성된 XML을 다시 HWPX(ZIP) 구조로 패킹하여 메모리에 저장
         doc_buffer = io.BytesIO()
         with zipfile.ZipFile(doc_buffer, 'w') as z_out:
             for info in template_infolist:
@@ -260,6 +282,7 @@ if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작
                 
         doc_bytes_dict[doc_id] = doc_buffer.getvalue()
         
+        # 문서별 항목 누락 현황 검사 및 점검 데이터 축적
         missing_cnt = len(missing_fields)
         ratio_str = f"{missing_cnt}건 / {total_merge_cnt}건"
         status = "정상" if missing_cnt == 0 else "일부항목누락"
@@ -272,19 +295,22 @@ if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작
             row_dict[f"[점검]{field}"] = f"{field} N/A" if field in missing_fields else "-"
         log_records.append(row_dict)
         
+        # 진행률 표시 업데이트
         progress_bar.progress(idx / total_rows)
         progress_text.text(f"⚡ HWPX 회의록 자동 생성 중... [{idx}/{total_rows}] {doc_id}.hwpx")
 
+    # 5. 생성로그 (Excel / CSV) 파일 자동 작성 및 서식 적용
     log_df = pd.DataFrame(log_records)
-    
     excel_log_df = log_df.drop(columns=["선택"])
     excel_buffer = io.BytesIO()
+    
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = "생성로그"
     headers = list(excel_log_df.columns)
     ws.append(headers)
     
+    # 엑셀 헤더 및 본문 스타일 지정 (제목 배경색, 글꼴, 경고 색상 등)
     header_fill = PatternFill(start_color="1F4E78", end_color="1F4E78", fill_type="solid")
     header_font = Font(color="FFFFFF", bold=True)
     red_text_font = Font(color="C00000", bold=True)
@@ -310,9 +336,11 @@ if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작
                 
     wb.save(excel_buffer)
     wb.close()
+    
     excel_bytes = excel_buffer.getvalue()
     csv_bytes = excel_log_df.to_csv(index=False, encoding='utf-8-sig').encode('utf-8-sig')
 
+    # 6. 생성된 전체 HWPX 파일들과 로그(Excel/CSV)를 통합 ZIP 파일로 압축
     zip_buffer = io.BytesIO()
     with zipfile.ZipFile(zip_buffer, 'w', compression=zipfile.ZIP_DEFLATED) as main_zip:
         for doc_id, b_data in doc_bytes_dict.items():
@@ -321,6 +349,7 @@ if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작
         main_zip.writestr(f"{folder_name}/심층면담_서류_Log_{version_str}.xlsx", excel_bytes)
         main_zip.writestr(f"{folder_name}/심층면담_서류_Log_{version_str}.csv", csv_bytes)
 
+    # 세션 상태 저장 (화면이 새로고침되어도 다운로드 버튼이 유지되도록 처리)
     st.session_state['generated_data'] = {
         'folder_name': folder_name, 'version_str': version_str,
         'doc_bytes_dict': doc_bytes_dict, 'all_zip_bytes': zip_buffer.getvalue(),
@@ -328,6 +357,9 @@ if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작
         'log_df': log_df, 'doc_ids': list(doc_bytes_dict.keys())
     }
 
+# -------------------------------------------------------------------------
+# [3] 결과 출력 및 다운로드 영역 (전체 ZIP / 개별 HWPX 다운로드)
+# -------------------------------------------------------------------------
 if 'generated_data' in st.session_state:
     data = st.session_state['generated_data']
     st.success(f"🎉 구글 시트 연결 성공! 총 **{len(data['doc_ids'])}건**의 회의록 및 점검 로그가 시간순으로 생성되었습니다.")
@@ -335,6 +367,7 @@ if 'generated_data' in st.session_state:
     st.subheader("📋 생성로그 미리보기 {시간순} & 선택 문서 다운로드")
     col_btn1, col_btn2, col_btn3, col_btn4 = st.columns([1.5, 1, 1, 1.5])
     
+    # 1) 전체 파일 통합 압축 다운로드 버튼
     with col_btn1:
         st.download_button(
             label=f"📦 전체 일괄 다운로드 ({len(data['doc_ids'])}건 ZIP)",
@@ -342,12 +375,15 @@ if 'generated_data' in st.session_state:
             mime="application/zip", use_container_width=True, key="btn_download_all"
         )
         
+    # 2) 테이블 내 체크박스 전체 선택 버튼
     with col_btn2:
         if st.button("☑️ 전체 선택", use_container_width=True): data['log_df']['선택'] = True
             
+    # 3) 테이블 내 체크박스 전체 해제 버튼
     with col_btn3:
         if st.button("⬜ 전체 해제", use_container_width=True): data['log_df']['선택'] = False
 
+    # 4) 웹 화면상 상호작용 가능한 생성로그 표(Table)
     edited_df = st.data_editor(
         data['log_df'],
         column_config={"선택": st.column_config.CheckboxColumn("선택", help="다운로드할 문서 항목을 체크하세요", default=False)},
@@ -358,6 +394,7 @@ if 'generated_data' in st.session_state:
     selected_rows = edited_df[edited_df["선택"] == True]
     selected_doc_ids = selected_rows["문서ID"].tolist()
 
+    # 5) 체크박스로 선택한 문서만 개별/선택 압축 다운로드
     with col_btn4:
         if len(selected_doc_ids) == 0:
             st.button("📄 선택 문서 다운로드 (0건)", disabled=True, use_container_width=True)
