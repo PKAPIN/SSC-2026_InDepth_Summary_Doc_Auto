@@ -1,9 +1,8 @@
 # =========================================================================
 # [웹 호스팅용] 심층면담 회의록 및 점검 로그 자동 생성 Streamlit 웹 앱
-# - 회의내용/회의결과 상호 공간 재배분(유동 높이 흡수) 최적화판
-# - 1페이지 표 틀 및 하단 로고 위치 완전 고정
+# - 회의내용/회의결과 높이 고정 완전 제거 (글자 수에 따라 유동적 자동 확장)
+# - 구글 시트 한 줄 공백(\n\n) 단락 서식 100% 보존
 # - 백그라운드 비동기 멀티스레딩 적용
-# - timeout=600(10분) 설정 및 응답 초과 시 재시도 안내 예외 처리
 # =========================================================================
 import io
 import os
@@ -25,11 +24,10 @@ ssl._create_default_https_context = ssl._create_unverified_context
 st.set_page_config(page_title="심층면담 회의록 자동 생성 시스템", page_icon="📄", layout="wide")
 
 # -------------------------------------------------------------------------
-# ★ [Apps Script 배포 웹 앱 URL 반영 완료]
+# ★ Apps Script 배포 웹 앱 URL
 # -------------------------------------------------------------------------
 APPS_SCRIPT_WEBAPP_URL = "https://script.google.com/macros/s/AKfycbzJNH4gwSimTdqv3bTQ3eLDKCKtUllDhs-k_sqbvxmvo5QvpgApTKm_ucAQzeylPFXQ/exec"
 
-# 초록색 버튼 지정 커스텀 CSS
 st.markdown("""
     <style>
     div.stButton > button[key="btn_update_data"] {
@@ -47,7 +45,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # -------------------------------------------------------------------------
-# [1] 상단 레이아웃 (좌측: 타이틀 및 연동 시트 / 우측 상단: 초록색 버튼 및 안내 박스)
+# [1] 상단 레이아웃
 # -------------------------------------------------------------------------
 col_title, col_top_btn = st.columns([3, 1.3])
 
@@ -62,7 +60,6 @@ with col_top_btn:
     update_clicked = st.button("🔄 자료 업데이트", key="btn_update_data", use_container_width=True)
     st.caption("구글 드라이브에 업로드된 문서내용을 스프레드 시트로 불러옵니다.")
 
-# 자료 업데이트 버튼 클릭 시 비동기 스레드 + 예외 문구 처리
 if update_clicked:
     st.write("🚀 **구글 드라이브 심층면담 기록지를 읽어 구글 시트(DB)에 AI 요약을 기입 중입니다...**")
     st.caption("💡 업데이트 분량이 많으면 1~2분 정도의 시간이 소요될 수 있습니다.")
@@ -113,7 +110,6 @@ if update_clicked:
     if response and response.status_code == 200:
         res_text = response.text.strip()
         
-        # HTML 코드가 반환되었을 경우 타임아웃 예외 문구 처리
         if res_text.startswith("<!DOCTYPE html>") or "<html" in res_text.lower():
             ai_progress_bar.progress(100)
             ai_status_text.warning("⚠️ 응답 시간이 초과되었습니다. 처리 중인 남은 항목 작성을 위해 [🔄 자료 업데이트] 버튼을 한 번 더 눌러 시도해 주세요.")
@@ -133,7 +129,6 @@ if update_clicked:
         status_err = response.status_code if response else f"오류 발생: {error}"
         st.error(f"❌ 앱스크립트 동기화 호출 실패 ({status_err})")
 
-# 구글 앱스크립트 업데이트 상세 결과 로그 박스
 if 'gs_update_log' in st.session_state:
     with st.expander("📋 업데이트 상세 로그 보기", expanded=True):
         st.code(st.session_state['gs_update_log'], language="text")
@@ -148,7 +143,7 @@ def format_section_headers(text: str) -> str:
         return ""
     cleaned = text.strip()
     def replace_header(match):
-        return f"\n\n**{match.group(0)}**"
+        return f"\n\n{match.group(0)}"
     return re.sub(r'<[^>]+>', replace_header, cleaned).strip()
 
 SHEET_ID = "1ws9JTAdRXwbp--NhrjWwelNorSTv1_LIJW7DijUtJLU"
@@ -211,20 +206,6 @@ if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작
         xml_content = template_files['Contents/section0.xml'].decode('utf-8')
         missing_fields = []
 
-        content_text = str(row.get('회의내용', '')).strip() if pd.notna(row.get('회의내용')) else ""
-        result_text = str(row.get('회의결과', '')).strip() if pd.notna(row.get('회의결과')) else ""
-
-        c_lines = max(1, len(content_text.splitlines()))
-        r_lines = max(1, len(result_text.splitlines()))
-
-        TOTAL_ALLOWANCE = 25000
-        LINE_HEIGHT_C = 1100
-        LINE_HEIGHT_R = 1000
-
-        needed_c_height = max(3500, c_lines * LINE_HEIGHT_C + 1500)
-        assigned_r_height = max(3500, TOTAL_ALLOWANCE - needed_c_height)
-        assigned_c_height = TOTAL_ALLOWANCE - assigned_r_height
-
         for col in data_df.columns:
             if col == '일시_dt': continue
             val = row[col]
@@ -241,7 +222,7 @@ if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작
                 
             val_str = val_str.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
             val_str = val_str.replace("\r\n", "\n").replace("\r", "\n")
-            val_str = val_str.replace("\n\n", "\n")
+            # ★ \n\n 축소 구문 삭제 (한 줄 공백 서식 유지)
             
             target_field = f"{{{{{col}}}}}"
             if target_field in xml_content:
@@ -256,16 +237,7 @@ if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작
                 val_str = val_str.replace("\n", paragraph_replace)
                 xml_content = xml_content.replace(target_field, val_str)
 
-        xml_content = re.sub(
-            r'(<hp:tc\b[^>]*?)(height="\d+")([^>]*?>[\s\S]*?\{\{회의내용\}\}|<hp:tc\b[^>]*?)(height="\d+")([^>]*?>[\s\S]*?회의내용)',
-            rf'\1height="{assigned_c_height}"\3',
-            xml_content
-        )
-        xml_content = re.sub(
-            r'(<hp:tc\b[^>]*?)(height="\d+")([^>]*?>[\s\S]*?\{\{회의결과\}\}|<hp:tc\b[^>]*?)(height="\d+")([^>]*?>[\s\S]*?회의결과)',
-            rf'\1height="{assigned_r_height}"\3',
-            xml_content
-        )
+        # ★ 높이 강제 고정(re.sub) 구문 완전히 삭제됨 -> 표 셀이 텍스트 양에 맞춰 유동 확장
 
         xml_content = re.sub(r'<hp:ctrl><hp:fieldBegin.*?</hp:ctrl>', '', xml_content, flags=re.DOTALL)
         xml_content = re.sub(r'<hp:ctrl><hp:fieldEnd.*?</hp:ctrl>', '', xml_content, flags=re.DOTALL)
@@ -332,6 +304,7 @@ if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작
                 cell.font = warning_text_font; cell.alignment = Alignment(horizontal="center", vertical="center")
                 
     wb.save(excel_buffer)
+    wb.close()  # ★ 엑셀 메모리 해제
     excel_bytes = excel_buffer.getvalue()
     csv_bytes = excel_log_df.to_csv(index=False, encoding='utf-8-sig').encode('utf-8-sig')
 
