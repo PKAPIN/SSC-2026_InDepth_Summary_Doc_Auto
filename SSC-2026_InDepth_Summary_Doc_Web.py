@@ -1,5 +1,7 @@
 # =========================================================================
 # [웹 호스팅용] 심층면담 회의록 및 점검 로그 자동 생성 Streamlit 웹 앱 (최종)
+# - 신규 배포 URL 적용 완료
+# - 구글 서버 캐시 우회(nocache) 적용 완료
 # - 회의내용/회의결과 유동 높이 자동 확장 적용
 # - 구글 시트 한 줄 공백(\n\n) 서식 100% 보존
 # - 백그라운드 비동기 멀티스레딩 및 메모리 안전 해제 적용
@@ -24,9 +26,9 @@ ssl._create_default_https_context = ssl._create_unverified_context
 st.set_page_config(page_title="심층면담 회의록 자동 생성 시스템", page_icon="📄", layout="wide")
 
 # -------------------------------------------------------------------------
-# ★ Apps Script 배포 웹 앱 URL
+# ★ [신규 반영] Apps Script 새 배포 웹 앱 URL
 # -------------------------------------------------------------------------
-APPS_SCRIPT_WEBAPP_URL = "https://script.google.com/macros/s/AKfycbzJNH4gwSimTdqv3bTQ3eLDKCKtUllDhs-k_sqbvxmvo5QvpgApTKm_ucAQzeylPFXQ/exec"
+APPS_SCRIPT_WEBAPP_URL = "https://script.google.com/macros/s/AKfycbzip_5GhlxnL6DjLhUQfbn04djF4AYmio1-Ij5hS5WdujGYAN-ZRKRA2ck0_K03TCdn/exec"
 
 st.markdown("""
     <style>
@@ -71,7 +73,9 @@ if update_clicked:
     
     def fetch_apps_script():
         try:
-            res = requests.get(APPS_SCRIPT_WEBAPP_URL, allow_redirects=True, timeout=600)
+            # ★ 캐시 우회: 이전 로그가 그대로 출력되는 현상 방지
+            nocache_url = f"{APPS_SCRIPT_WEBAPP_URL}?_nocache={int(time.time())}"
+            res = requests.get(nocache_url, allow_redirects=True, timeout=600)
             api_result["response"] = res
         except Exception as e:
             api_result["error"] = e
@@ -153,7 +157,7 @@ if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작
     
     hwpx_files = [f for f in glob.glob("*.hwpx") if not os.path.basename(f).startswith("~$")]
     if not hwpx_files:
-        st.error("❌ 저장소 내에서 지정된 .hwpx 템플릿 파일을 찾을 수 없습니다. GitHub 저장소에 .hwpx 파일을 올려주세요.")
+        st.error("❌ 저장소 내에서 지정된 .hwpx 템플릿 파일을 찾을 수 무 없습니다. GitHub 저장소에 .hwpx 파일을 올려주세요.")
         st.stop()
         
     template_path = max(hwpx_files, key=os.path.getmtime)
