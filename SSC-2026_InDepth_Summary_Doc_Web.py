@@ -1,5 +1,5 @@
 # =========================================================================
-# [웹 호스팅용] 심층면담 회의록 및 점검 로그 자동 생성 Streamlit 웹 앱
+# [웹 호스팅용] 심층면담 회의록 문서 및 점검 로그 자동 생성 Streamlit 웹 앱
 # =========================================================================
 import io
 import os
@@ -220,25 +220,9 @@ if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작
                 run_matches = list(re.finditer(r'<hp:run\b[^>]*>', xml_content[:field_pos]))
                 open_run_tag = run_matches[-1].group(0) if run_matches else '<hp:run>'
                 
-                bold_run_tag = open_run_tag
-                if 'charPrRef' in bold_run_tag:
-                    bold_run_tag = re.sub(r'charPrRef="[0-9]+"', 'charPrRef="1"', bold_run_tag)
-                else:
-                    bold_run_tag = bold_run_tag.replace('<hp:run', '<hp:run charPrRef="1"')
-
-                lines = val_str.split("\n")
-                replaced_parts = []
-                for i, line in enumerate(lines):
-                    is_header = line.strip().startswith("&lt;") and line.strip().endswith("&gt;")
-                    curr_run = bold_run_tag if is_header else open_run_tag
-                    
-                    if i == 0:
-                        replaced_parts.append(f'{curr_run}<hp:t>{line}</hp:t></hp:run>')
-                    else:
-                        replaced_parts.append(f'</hp:p>{open_p_tag}{curr_run}<hp:t>{line}</hp:t></hp:run>')
-                
-                xml_content = xml_content.replace(f'{open_run_tag}<hp:t>{target_field}</hp:t>', "".join(replaced_parts))
-                xml_content = xml_content.replace(target_field, "".join(replaced_parts))
+                paragraph_replace = f'</hp:t></hp:run></hp:p>{open_p_tag}{open_run_tag}<hp:t>'
+                val_str = val_str.replace("\n", paragraph_replace)
+                xml_content = xml_content.replace(target_field, val_str)
 
         xml_content = re.sub(r'<hp:ctrl><hp:fieldBegin.*?</hp:ctrl>', '', xml_content, flags=re.DOTALL)
         xml_content = re.sub(r'<hp:ctrl><hp:fieldEnd.*?</hp:ctrl>', '', xml_content, flags=re.DOTALL)
