@@ -151,7 +151,7 @@ st.divider()
 # [2] 회의록 문서(HWPX) 및 생성 로그 일괄 생성 기능
 # -------------------------------------------------------------------------
 
-# 소주제 헤더(<...>) 처리 함수 (소주제 직전 공백 유지)
+# ★ 1번 성공 요구사항 함수: 소주제 헤더(<...>) 앞에 빈 줄(\n\n)이 없을 때만 1줄 공백 보장 (중복 공백 방지)
 def format_section_headers(text: str) -> str:
     if not text or not isinstance(text, str):
         return ""
@@ -240,7 +240,7 @@ if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작
             elif isinstance(val, datetime.time): val_str = val.strftime('%H:%M')
             else: val_str = str(val).strip()
             
-            # 회의내용/회의결과일 경우 소주제 처리
+            # 회의내용/회의결과일 경우 소주제 전 공백 처리 적용
             if col in ['회의내용', '회의결과']:
                 val_str = format_section_headers(val_str)
                 val_str = val_str.replace("**", "") # 잔여 마크다운 표기 정돈
@@ -249,7 +249,7 @@ if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작
             val_str = val_str.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
             val_str = val_str.replace("\r\n", "\n").replace("\r", "\n")
             
-            # HWPX XML 치환 로직
+            # HWPX XML 문단 속성을 유지하며 텍스트 줄바꿈(\n)을 문서에 주입하는 구문
             target_field = f"{{{{{col}}}}}"
             if target_field in xml_content:
                 field_pos = xml_content.find(target_field)
@@ -259,28 +259,9 @@ if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작
                 run_matches = list(re.finditer(r'<hp:run\b[^>]*>', xml_content[:field_pos]))
                 open_run_tag = run_matches[-1].group(0) if run_matches else '<hp:run>'
                 
-                # 일반 줄바꿈 태그
-                normal_p_replace = f'</hp:t></hp:run></hp:p>{open_p_tag}{open_run_tag}<hp:t>'
-                
-                # ★ 개조식(- )으로 시작하는 줄인 경우 내어쓰기(15pt)가 주입된 문단 태그 주입
-                indent_p_tag = open_p_tag.replace('>', ' marginLeft="1500" intent="-1500">') if 'marginLeft' not in open_p_tag else open_p_tag
-                indent_p_replace = f'</hp:t></hp:run></hp:p>{indent_p_tag}{open_run_tag}<hp:t>'
-                
-                # 줄 단위 처리하여 불릿(-) 항목만 선택적 내어쓰기 적용
-                lines = val_str.split("\n")
-                formatted_lines = []
-                for line in lines:
-                    line_clean = line.strip()
-                    if line_clean.startswith("- ") or line_clean.startswith("-&nbsp;"):
-                        formatted_lines.append(f"[[INDENT]]{line}")
-                    else:
-                        formatted_lines.append(line)
-                        
-                val_str = "\n".join(formatted_lines)
-                val_str = val_str.replace("\n[[INDENT]]", indent_p_replace)
-                val_str = val_str.replace("[[INDENT]]", "") # 맨 첫 줄 예외 처리
-                val_str = val_str.replace("\n", normal_p_replace)
-
+                # 파일 깨짐이 없는 100% 안전한 원본 치환 방식
+                paragraph_replace = f'</hp:t></hp:run></hp:p>{open_p_tag}{open_run_tag}<hp:t>'
+                val_str = val_str.replace("\n", paragraph_replace)
                 xml_content = xml_content.replace(target_field, val_str)
 
         # 누름틀 빨간 괄호 필드 선언 제거 및 불필요한 태그 정리
