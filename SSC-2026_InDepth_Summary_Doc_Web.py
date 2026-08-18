@@ -1,8 +1,9 @@
 # =========================================================================
-# [웹 호스팅용] 심층면담 회의록 문서 및 점검 로그 자동 생성 Streamlit 웹 앱 (최종 서식 교정판)
-# - 소주제 헤더 전 공백 3줄 벌어짐 완벽 수정 (정확히 한 줄 공백 \n\n 보존)
-# - 소주제 헤더 볼드(굵은 글씨) 속성 정상화
-# - 표 셀 유동 높이 자동 확장 적용
+# [웹 호스팅용] 심층면담 회의록 및 점검 로그 자동 생성 Streamlit 웹 앱 (최종)
+# - 신규 배포 URL 적용 완료
+# - 구글 서버 캐시 우회(nocache) 적용 완료
+# - 회의내용/회의결과 유동 높이 자동 확장 적용
+# - 구글 시트 한 줄 공백(\n\n) 서식 100% 보존
 # - 백그라운드 비동기 멀티스레딩 및 메모리 안전 해제 적용
 # =========================================================================
 import io
@@ -25,7 +26,7 @@ ssl._create_default_https_context = ssl._create_unverified_context
 st.set_page_config(page_title="심층면담 회의록 자동 생성 시스템", page_icon="📄", layout="wide")
 
 # -------------------------------------------------------------------------
-# ★ Apps Script 배포 웹 앱 URL
+# ★ [신규 반영] Apps Script 새 배포 웹 앱 URL
 # -------------------------------------------------------------------------
 APPS_SCRIPT_WEBAPP_URL = "https://script.google.com/macros/s/AKfycbzip_5GhlxnL6DjLhUQfbn04djF4AYmio1-Ij5hS5WdujGYAN-ZRKRA2ck0_K03TCdn/exec"
 
@@ -72,6 +73,7 @@ if update_clicked:
     
     def fetch_apps_script():
         try:
+            # ★ 캐시 우회: 이전 로그가 그대로 출력되는 현상 방지
             nocache_url = f"{APPS_SCRIPT_WEBAPP_URL}?_nocache={int(time.time())}"
             res = requests.get(nocache_url, allow_redirects=True, timeout=600)
             api_result["response"] = res
@@ -138,35 +140,25 @@ if 'gs_update_log' in st.session_state:
 st.divider()
 
 # -------------------------------------------------------------------------
-# [2] 서식 정밀 처리 함수 (공백 3줄 뻥튀기 방지 & 볼드 유지)
+# [2] 회의록 문서 및 생성로그 일괄 생성 영역
 # -------------------------------------------------------------------------
 def format_section_headers(text: str) -> str:
-    """구글 시트의 텍스트에서 과도하게 벌어진 공백을 정돈하고, 소주제 헤더 앞 한 줄 공백만 보존"""
     if not text or not isinstance(text, str):
         return ""
-    
     cleaned = text.strip()
-    # 3줄 이상 연속된 공백 줄을 깔끔하게 '한 줄 공백(\n\n)'으로 축소
-    cleaned = re.sub(r'\n{3,}', '\n\n', cleaned)
-    
-    # 소주제 헤더(<...>) 바로 앞에 \n\n이 없는 경우에만 \n\n을 붙여서 정확한 한 줄 공백 형성
-    def fix_spacing(match):
+    def replace_header(match):
         return f"\n\n{match.group(0)}"
-    
-    result = re.sub(r'(?<!\n\n)<[^>]+>', fix_spacing, cleaned).strip()
-    return result
+    # ★ 수정: 소주제 헤더(<...>) 바로 앞에 \n\n이 없는 경우에만 \n\n을 붙여 공백 중복 방지
+    return re.sub(r'(?<!\n\n)<[^>]+>', replace_header, cleaned).strip()
 
 SHEET_ID = "1ws9JTAdRXwbp--NhrjWwelNorSTv1_LIJW7DijUtJLU"
 GID = "770556375"
 
-# -------------------------------------------------------------------------
-# [3] 회의록 문서 및 생성로그 일괄 생성 영역
-# -------------------------------------------------------------------------
 if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작", type="primary", use_container_width=True):
     
     hwpx_files = [f for f in glob.glob("*.hwpx") if not os.path.basename(f).startswith("~$")]
     if not hwpx_files:
-        st.error("❌ 저장소 내에서 지정된 .hwpx 템플릿 파일을 찾을 수 없습니다. GitHub 저장소에 .hwpx 파일을 올려주세요.")
+        st.error("❌ 저장소 내에서 지정된 .hwpx 템플릿 파일을 찾을 수 무 없습니다. GitHub 저장소에 .hwpx 파일을 올려주세요.")
         st.stop()
         
     template_path = max(hwpx_files, key=os.path.getmtime)
@@ -231,6 +223,7 @@ if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작
             
             if col in ['회의내용', '회의결과']:
                 val_str = format_section_headers(val_str)
+                # ★ 수정: val_str.replace("**", "") 삭제하여 볼드 표기 유지
                 
             val_str = val_str.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
             val_str = val_str.replace("\r\n", "\n").replace("\r", "\n")
@@ -244,26 +237,9 @@ if st.button("🚀 실시간 데이터 읽기 및 회의록 자동 생성 시작
                 run_matches = list(re.finditer(r'<hp:run\b[^>]*>', xml_content[:field_pos]))
                 open_run_tag = run_matches[-1].group(0) if run_matches else '<hp:run>'
                 
-                # 줄바꿈(\n) 단위로 분할하여 HWPX 문단 태그 구축
-                lines = val_str.split("\n")
-                formatted_lines = []
-                
-                for line in lines:
-                    # 소주제 헤더(&lt;...&gt; 형태)인 경우 bold 속성을 유도하도록 태그 구성
-                    if line.strip().startswith("&lt;") and line.strip().endswith("&gt;"):
-                        # HWPX 태그 내에서 소주제 헤더를 볼드로 강조 처리
-                        bold_run_tag = open_run_tag.replace('charPrRef="0"', 'charPrRef="1"').replace('charPrRef="2"', 'charPrRef="1"')
-                        if 'charPrRef' not in bold_run_tag:
-                            bold_run_tag = bold_run_tag.replace('<hp:run', '<hp:run charPrRef="1"')
-                        formatted_lines.append(f"{open_p_tag}{bold_run_tag}<hp:t>{line}</hp:t></hp:run></hp:p>")
-                    else:
-                        formatted_lines.append(f"{open_p_tag}{open_run_tag}<hp:t>{line}</hp:t></hp:run></hp:p>")
-                
-                # 완성된 문단들을 결합하여 치환
-                replacement_xml = "".join(formatted_lines)
-                xml_content = xml_content.replace(f"{open_p_tag}{open_run_tag}<hp:t>{target_field}</hp:t></hp:run></hp:p>", replacement_xml)
-                # 예비 치환 구문
-                xml_content = xml_content.replace(target_field, replacement_xml)
+                paragraph_replace = f'</hp:t></hp:run></hp:p>{open_p_tag}{open_run_tag}<hp:t>'
+                val_str = val_str.replace("\n", paragraph_replace)
+                xml_content = xml_content.replace(target_field, val_str)
 
         xml_content = re.sub(r'<hp:ctrl><hp:fieldBegin.*?</hp:ctrl>', '', xml_content, flags=re.DOTALL)
         xml_content = re.sub(r'<hp:ctrl><hp:fieldEnd.*?</hp:ctrl>', '', xml_content, flags=re.DOTALL)
