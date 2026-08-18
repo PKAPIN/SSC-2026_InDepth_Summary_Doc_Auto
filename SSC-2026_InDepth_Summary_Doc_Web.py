@@ -122,27 +122,37 @@ if update_clicked:
     if response and response.status_code == 200:
         res_text = response.text.strip()
         
-        # 1) HWP(구형 한글 파일) 포맷 감지 시 (요청하신 기존 안내 문구 적용)
-        if "HWP 파일" in res_text or "HWPX 변환 필요" in res_text or "변환필요" in res_text:
+        # 1) 구글 서버 응답 시간 초과(HTML 응답) 시
+        if res_text.startswith("<!DOCTYPE html>") or "<html" in res_text.lower():
+            ai_progress_bar.progress(100)
+            ai_status_text.warning("⚠️ 응답 시간이 초과되었습니다. 처리 중인 남은 항목 작성을 위해 [🔄 자료 업데이트] 버튼을 한 번 더 눌러 시도해 주세요.")
+            st.session_state['gs_update_log'] = "⚠️ 구글 서버 응답 시간 초과(6분 제한)로 일시 중단되었습니다.\n구글 시트(DB)에는 현재까지 작성된 데이터가 저장되어 있으니, 남은 항목 완결을 위해 [🔄 자료 업데이트] 버튼을 한 번 더 눌러주세요."
+        
+        # 2) HWP(구형 한글 파일) 미처리 항목이 감지된 경우 (조건식 단어 보완)
+        elif "HWP 파일" in res_text or "HWPX 변환 필요" in res_text or "변환필요" in res_text:
             ai_progress_bar.progress(100)
             ai_status_text.warning("⚠️ 해당 문서들을 [.hwpx] 포맷으로 변환하여 업로드하신 후 다시 [🔄 자료 업데이트]를 눌러주세요.")
-            st.session_state['gs_update_log'] = res_text
+            st.session_state.clear()
             
-        # 2) 구글 서버 6분 실행 제한 초과 시 (HTML 에러 응답)
-        elif res_text.startswith("<!DOCTYPE html>") or "<html" in res_text.lower():
-            ai_progress_bar.progress(100)
-            ai_status_text.warning("⚠️ 처리 분량이 많아 안전하게 일시 중단되었습니다. 남은 항목 작성을 위해 [🔄 자료 업데이트] 버튼을 한 번 더 눌러 시도해 주세요.")
-            st.session_state['gs_update_log'] = (
-                "⚠️ 구글 서버 응답 시간 초과(6분 제한)로 일시 중단되었습니다.\n"
-                "구글 시트(DB)에는 현재까지 작성된 데이터가 저장되어 있으니, 남은 항목 완결을 위해 [🔄 자료 업데이트] 버튼을 한 번 더 눌러주세요."
-            )
-            
-        # 3) 정상 완료 (HWP 에러 없이 100% 성공했을 때)
+            try:
+                res_json = response.json()
+                gs_result_msg = res_json.get("result", res_text)
+                st.session_state['gs_update_log'] = gs_result_msg
+            except Exception:
+                st.session_state['gs_update_log'] = res_text
+                
+        # 3) HWP 에러 없이 100% 정상 완료된 경우
         else:
             ai_progress_bar.progress(100)
             ai_status_text.success("✅ 구글 드라이브의 문서 내용이 구글 시트(DB)로 성공적으로 자동 요약되어 동기화되었습니다! (100% 완료)")
             st.session_state.clear()
-            st.session_state['gs_update_log'] = res_text
+            
+            try:
+                res_json = response.json()
+                gs_result_msg = res_json.get("result", res_text)
+                st.session_state['gs_update_log'] = gs_result_msg
+            except Exception:
+                st.session_state['gs_update_log'] = res_text
     else:
         status_err = response.status_code if response else f"오류 발생: {error}"
         st.error(f"❌ 앱스크립트 동기화 호출 실패 ({status_err})")
